@@ -1,0 +1,26 @@
+[
+  {
+    "hub_version": 1,
+    "destination": "food",
+    "source": "manual",
+    "source_ref": "example.meal.001",
+    "idempotency_key": "sample_meal_0001",
+    "created_at": "2026-11-01T10:00:00Z",
+    "candidate_type": "meal",
+    "payload": {
+      "menu_name": "가상 라멘",
+      "place_name": "가상 식당",
+      "note": "테스트용 가상 기록. 실제 식사가 아닙니다."
+    }
+  },
+  {
+    "hub_version": 1,
+    "destination": "food",
+    "source": "manual",
+    "source_ref": "example.wish.002",
+    "idempotency_key": "sample_wish_0002",
+    "created_at": "2026-11-01T10:00:00Z",
+    "candidate_type": "wish",
+    "payload": {"wish_kind": "visit_place", "name": "가상의 가게"}
+  }
+]
