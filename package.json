@@ -1,0 +1,9 @@
+{
+  "name": "life-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Public code for private-first personal record routing. No personal data in this repository.",
+  "engines": {"node": ">=22"},
+  "scripts": {"test": "node --test", "check": "node --check src/core/candidates.js && node --check src/adapters/food.js && node --test"}
+}
