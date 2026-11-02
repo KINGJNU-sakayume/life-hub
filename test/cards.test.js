@@ -75,7 +75,8 @@ test('resources: every card is a small self-contained mcp-app page with no exter
   try {
     const list = await rpc(db, 'resources/list', {});
     assert.deepEqual(list.result.resources.map((r) => [r.uri, r.mimeType]), [
-      ['ui://life-hub/card-food.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-kyeokyeoi.html', 'text/html;profile=mcp-app']]);
+      ['ui://life-hub/card-food.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-kyeokyeoi.html', 'text/html;profile=mcp-app'],
+      ['ui://life-hub/card-diaryroulette.html', 'text/html;profile=mcp-app']]);
     for (const { uri } of list.result.resources) {
     const read = await rpc(db, 'resources/read', { uri });
     const [content] = read.result.contents;

@@ -66,6 +66,8 @@ textarea{min-height:76px;padding:10px 12px;resize:vertical}
  * Runs inside the card iframe. `B` is the destination body: { view(c, h), edit(c, h), read(values, c) → payload | error text }
  * and optionally bind(form, c, h) (wire dynamic parts of the edit form, e.g. a picker) and preApprove(c, h) → null |
  * { message, later } (something the app would still ask: offer 「수정」 or approve with a last check in the app).
+ * Also optional: noEdit / approveLabel (a body without 「수정」, e.g. the roulette), foot(c, h) → footer HTML or null,
+ * mount(root, c, h) after each view render (animations), afterApprove(c, open) once an approval went through.
  */
 const RUNTIME = String.raw`
 (function(){
@@ -77,7 +79,7 @@ function post(m){window.parent.postMessage(m,'*');}
 function request(method,params){return new Promise(function(ok,no){var id=++seq;waiting[id]={ok:ok,no:no};post({jsonrpc:'2.0',id:id,method:method,params:params});});}
 function notify(method,params){post({jsonrpc:'2.0',method:method,params:params});}
 var esc=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
-var H={esc:esc,
+var H={esc:esc,appLink:function(t,path){return appLink(t,path);},
   date:function(d){if(!/^\d{4}-\d{2}-\d{2}$/.test(d||''))return '';var p=d.split('-'),t=new Date(),today=t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2);
     return (Number(p[0])!==t.getFullYear()?p[0]+'년 ':'')+Number(p[1])+'월 '+Number(p[2])+'일'+(d===today?' (오늘)':'');},
   facts:function(rows){rows=rows.filter(function(r){return r[1];});return rows.length?'<dl>'+rows.map(function(r){return '<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>';}).join('')+'</dl>':'';},
@@ -90,22 +92,23 @@ var H={esc:esc,
     options.map(function(x){return '<button type="button" class="chip" data-value="'+esc(x[0])+'" aria-pressed="'+on(x[0])+'">'+esc(x[1])+'</button>';}).join('')+'</div></div>';}
 };
 var PILL={pending:['검토 대기','p-wait'],edited:['수정함','p-edit'],editing:['수정 중','p-edit'],busy:['처리 중…','p-edit'],approved:['승인됨','p-ok'],review:['확인 필요','p-warn'],
-  confirmed:['저장됨','p-done'],rejected:['거절됨','p-off'],error:['다시 확인','p-err']};
+  confirmed:['저장됨','p-done'],rejected:['거절됨','p-off'],error:['다시 확인','p-err'],drawn:['오늘의 미션','p-ok']};
 function pill(){var c=S.card;if(S.error)return PILL.error;if(S.busy)return PILL.busy;if(S.mode==='edit')return PILL.editing;
   if(c.status==='pending')return c.revision>0?PILL.edited:PILL.pending;if(c.status==='approved')return c.needs_app_review?PILL.review:PILL.approved;return PILL[c.status]||PILL.pending;}
-function appLink(text){return S.card.app_url?'<button type="button" class="link" data-act="open">'+esc(text||S.card.app+' 열기')+'</button>':'';}
+function appLink(text,path){return S.card.app_url?'<button type="button" class="link" data-act="open"'+(path?' data-path="'+esc(path)+'"':'')+'>'+esc(text||S.card.app+' 열기')+'</button>':'';}
 function footer(){var c=S.card,a=esc(c.app);
   if(S.mode==='edit')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><span class="grow"></span><button type="button" class="btn pri" data-act="save"'+(S.busy?' disabled':'')+'>변경 반영</button></div>';
   if(S.mode==='pre')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="link" data-act="later">'+esc(S.pre.later)+'</button><span class="grow"></span><button type="button" class="btn pri" data-act="edit">수정</button></div>';
   if(S.mode==='confirm')return '<div class="confirm" role="alertdialog" aria-label="거절 확인"><p>거절할까요? '+a+'에 저장되지 않아요.</p><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="btn danger" data-act="reject">거절하기</button></div>';
+  if(B.foot){var own=B.foot(c,H);if(own!=null)return own;}
   if(c.status==='approved')return '<div class="foot"><p class="fl">'+(c.needs_app_review?'승인했어요. '+a+'를 열면 한 번 더 확인해요. ':'다음에 '+a+'를 열면 자동으로 저장돼요. ')+appLink()+'</p></div>';
   if(c.status==='confirmed')return '<div class="foot"><p class="fl">'+a+'에 저장했어요.</p></div>';
   if(c.status==='rejected')return '<div class="foot"><p class="fl">'+a+'에 저장되지 않아요.</p></div>';
   if(S.error==='expired'||!S.ticket||c.approve==='scope')return '<div class="foot"><p class="fl">지금은 '+appLink(a+'에서 검토')+'할 수 있어요.</p></div>';
   if(S.error==='conflict')return '<div class="foot"><span class="grow"></span><button type="button" class="btn" data-act="refresh">새로 고침</button></div>';
   var dis=S.busy?' disabled':'';
-  var right=c.approve==='ok'?'<button type="button" class="btn" data-act="edit"'+dis+'>수정</button><button type="button" class="btn pri" data-act="approve"'+dis+'>'+(S.busy?'승인 중…':'승인')+'</button>':
-    '<button type="button" class="btn" data-act="edit"'+dis+'>수정</button>';
+  var edit=B.noEdit?'':'<button type="button" class="btn" data-act="edit"'+dis+'>수정</button>';
+  var right=c.approve==='ok'?edit+'<button type="button" class="btn pri" data-act="approve"'+dis+'>'+(S.busy?'처리 중…':(B.approveLabel||'승인'))+'</button>':edit;
   return (c.approve==='ok'?'':'<p class="line">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot"><button type="button" class="link" data-act="ask"'+dis+'>거절</button><span class="grow"></span>'+right+'</div>';}
 function callout(){var c=S.card;
   if(S.error==='expired')return '<p class="callout c-err" role="alert">이 카드는 만료됐어요.</p>';
@@ -120,6 +123,7 @@ function render(){
   root.innerHTML='<section class="card'+(c.status==='rejected'?' off':'')+'" aria-label="'+esc(c.label)+' 후보"><div class="head"><span class="eyebrow">'+esc(c.label)+' <span class="app">· '+esc(c.app)+'</span></span><span class="pill '+p[1]+'">'+p[0]+'</span></div>'+
     (S.mode==='edit'?'<form id="ef" novalidate>'+B.edit(c,H)+'</form>':B.view(c,H))+callout()+footer()+'</section><p class="sr" role="status" aria-live="polite">'+esc(S.live)+'</p>';
   if(S.mode==='edit'&&B.bind)B.bind(root.querySelector('#ef'),c,H);
+  else if(B.mount)B.mount(root,c,H);
 }
 function take(result){
   if(!result)return;
@@ -131,7 +135,8 @@ function take(result){
 function act(name,args,live){
   if(S.busy)return;S.busy=true;S.error=null;render();
   args.candidate_id=S.card.candidate_id;args.ticket=S.ticket;
-  request('tools/call',{name:name,arguments:args}).then(function(r){S.busy=false;S.mode='view';take(r);S.live=S.error?'':live;render();},
+  request('tools/call',{name:name,arguments:args}).then(function(r){S.busy=false;S.mode='view';take(r);S.live=S.error?'':live;render();
+    if(name==='card_approve'&&!S.error&&B.afterApprove)B.afterApprove(S.card,function(path){if(S.card.app_url)request('ui/open-link',{url:S.card.app_url+(path||'')}).catch(function(){});});},
     function(e){S.busy=false;S.error=(e&&e.message)||'연결을 확인해 주세요.';render();});
 }
 root.addEventListener('click',function(e){
@@ -148,7 +153,7 @@ root.addEventListener('click',function(e){
   else if(a==='approve'){var pre=B.preApprove&&B.preApprove(S.card,H);if(pre){S.mode='pre';S.pre=pre;render();return;}act('card_approve',{revision:S.card.revision},'승인했어요.');}
   else if(a==='later')act('card_approve',{revision:S.card.revision,app_review:true},'승인했어요. 앱에서 한 번 더 확인해요.');
   else if(a==='refresh')act('card_refresh',{},'최신 내용을 불러왔어요.');
-  else if(a==='open'&&S.card.app_url)request('ui/open-link',{url:S.card.app_url}).catch(function(){});
+  else if(a==='open'&&S.card.app_url)request('ui/open-link',{url:S.card.app_url+(b.dataset.path||'')}).catch(function(){});
   else if(a==='save'){var f=root.querySelector('#ef'),v={};
     f.querySelectorAll('input[name],textarea[name]').forEach(function(x){v[x.name]=x.value.trim();});
     f.querySelectorAll('[data-chips]').forEach(function(g){var on=g.querySelectorAll('[aria-pressed=true]');
@@ -200,10 +205,10 @@ connect();
 /** Leading indentation and comment-only lines are dropped (the scripts have no multi-line string literals). */
 const compact = (code) => code.replace(/\n\s*\/\/[^\n]*/g, '').replace(/\n\s+/g, '\n');
 
-/** A complete card document: shared shell + one destination body script. */
-export function cardDocument(title, bodyScript) {
+/** A complete card document: shared shell + one destination body script (+ optional body styles). */
+export function cardDocument(title, bodyScript, bodyCss = '') {
   return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    `<title>${title}</title><style>${CSS}</style></head><body><div id="root"></div>` +
+    `<title>${title}</title><style>${CSS}${bodyCss}</style></head><body><div id="root"></div>` +
     `<script>${compact(bodyScript)}</script><script>${compact(RUNTIME)}</script></body></html>`;
 }
 

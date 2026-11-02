@@ -78,6 +78,12 @@ export async function getCandidate(db, ownerId, id, source) {
   return row ? record(row) : null;
 }
 
+/** A candidate by its destination, source and idempotency key (owner-scoped), or null. */
+export async function findCandidateByKey(db, ownerId, destination, source, key) {
+  const row = await rowByKey(db, ownerId, destination, source, key);
+  return row ? record(row) : null;
+}
+
 /** Look up by the destination-visible key (source + idempotency key), owner-scoped. */
 async function rowByKey(db, ownerId, destination, source, key) {
   return db.prepare('SELECT * FROM inbox WHERE owner_id=? AND destination=? AND source=? AND idempotency_key=?')

@@ -16,6 +16,7 @@ import { toAchievementCandidate } from './adapters/achievement.js';
 import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
 import { toSubCandidate } from './adapters/sub.js';
 import { toAnimanCandidate } from './adapters/animan.js';
+import { toDiaryrouletteCandidate } from './adapters/diaryroulette.js';
 
 export const DESTINATIONS = Object.freeze([
   {
@@ -58,6 +59,15 @@ export const DESTINATIONS = Object.freeze([
     id: 'animan', app: 'AniMan', role: 'animan', path: '/animan', scope: 'animan:inbox',
     redirectVar: 'HUB_ANIMAN_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
     grants: 'Life Hub 수신함의 <strong>애니·만화 진행 후보를 가져오고</strong>, AniMan에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'diaryroulette', app: '일기 룰렛', role: 'diaryroulette', path: '/diaryroulette', scope: 'diaryroulette:inbox',
+    redirectVar: 'HUB_DIARYROULETTE_REDIRECT_URI', types: ['daily_mission'], adapter: toDiaryrouletteCandidate, label: 'diaryroulette',
+    // Roulette card; the app saves `approved` missions after its own day/cooldown checks.
+    card: { approve: true },
+    // The mission list and today's state (resting missions, a mission already drawn today) the app shares.
+    refKinds: ['missions', 'state'],
+    grants: 'Life Hub 수신함의 <strong>오늘의 미션 후보를 가져오고</strong>, 미션 목록과 오늘 상태(쉬는 미션·오늘 뽑은 미션)를 공유하고, 일기 룰렛에서 정한 결과를 돌려보낼 수 있어요. 일기 내용은 보내지 않아요.',
   },
 ]);
 
