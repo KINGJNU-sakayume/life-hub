@@ -10,6 +10,8 @@ import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js'
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
 import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 import { READING_PREVIEW_URI } from './reading-widget.js';
+import { CARD_PREVIEW_URI } from './cards/widget.js';
+import { toDestinationCandidate } from '../adapters/index.js';
 
 function sourceFor(context) {
   // This is injected by the authenticated MCP handler, never from tool arguments.
@@ -166,10 +168,38 @@ export const TOOLS = Object.freeze([
   {
     name: 'preview_reading_record',
     title: 'Review reading update before proposing',
-    description: 'PREVIEW ONLY, no data is saved. When a ChatGPT user reports reading progress or finishing a book, call this first to display an editable reading-record card for letterbookxd. They can correct title, state, pages and notes, then explicitly submit the PENDING proposal from the card. If no card displays, present the draft in text and ask for confirmation before calling propose_reading_record.',
+    description: 'Read-only preview for reading progress or completion. Call before proposing when a ChatGPT or Claude user reports reading; render an editable card, then let the user submit the pending candidate. Without UI, ask for confirmation before propose_reading_record.',
     inputSchema: readingSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    _meta: { ui: { resourceUri: READING_PREVIEW_URI } },
+    _meta: { ui: { resourceUri: READING_PREVIEW_URI, visibility: ['model', 'app'] } },
+  },
+  {
+    name: 'preview_food_meal',
+    title: 'Review meal before proposing',
+    description: 'Read-only editable PALATE meal preview. Use when the owner says they actually ate something; do not submit without user action. Text-only: request confirmation before propose_food_meal.',
+    inputSchema: mealSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: CARD_PREVIEW_URI, visibility: ['model', 'app'] } },
+  },
+  {
+    name: 'preview_food_wish',
+    title: 'Review food wish before proposing',
+    description: 'Read-only editable PALATE wish preview for a place/dish the owner wants to try. Text-only: confirm before propose_food_wish.',
+    inputSchema: wishSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: CARD_PREVIEW_URI, visibility: ['model', 'app'] } },
+  },
+  {
+    name: 'preview_memory',
+    title: 'Review memory before proposing',
+    description: 'Read-only editable 켜켜이 memory preview. Keep original time/place words; do not turn a memory into a region visit. Text-only: confirm before propose_memory.',
+    inputSchema: memorySchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: CARD_PREVIEW_URI, visibility: ['model', 'app'] } },
+  },
+  {
+    name: 'preview_region_visit',
+    title: 'Review region visit before proposing',
+    description: 'Read-only editable 켜켜이 visit preview; only for a visit the owner stated. Region hints are suggestions, not validated region codes. Text-only: confirm before propose_region_visit.',
+    inputSchema: visitSchema, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: CARD_PREVIEW_URI, visibility: ['model', 'app'] } },
   },
   {
     name: 'get_proposal_status',
@@ -333,16 +363,41 @@ async function propose(context, destination, candidateType, payload) {
 /** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
 export async function callTool(name, args, context) {
   try {
-    if (name === 'preview_reading_record') {
-      // Preview never touches D1, and is only exposed to ChatGPT, not Claude/Codex.
-      if (sourceFor(context) !== 'chatgpt') return null;
-      const draft = pick(args, readingSchema);
-      if (draft.state === 'completed' && draft.current_page !== undefined ||
-          draft.state === 'reading' && (draft.rating !== undefined || draft.liked !== undefined))
-        throw new ToolInputError('Reading updates use current_page; completed books use rating/liked.');
+    const previews = {
+      preview_reading_record: { variant: 'reading', destination: 'letterbookxd', type: 'reading_record', schema: readingSchema },
+      preview_food_meal: { variant: 'meal', destination: 'food', type: 'meal', schema: mealSchema },
+      preview_food_wish: { variant: 'wish', destination: 'food', type: 'wish', schema: wishSchema },
+      preview_memory: { variant: 'memory', destination: 'kyeokyeoi', type: 'memory', schema: memorySchema },
+      preview_region_visit: { variant: 'visit', destination: 'kyeokyeoi', type: 'visit', schema: visitSchema },
+    };
+    const preview = previews[name];
+    if (preview) {
+      if (!['claude', 'chatgpt'].includes(sourceFor(context))) return null;
+      const draft = pick(args, preview.schema);
+      const payload = preview.variant === 'meal' ? {
+        menu_name: draft.menu_name,
+        ...(draft.place_name !== undefined ? { place_name: draft.place_name } : {}),
+        ...(draft.verdict !== undefined ? { verdict: draft.verdict } : {}),
+        ...(draft.reorder_intent !== undefined ? { reorder_intent: draft.reorder_intent } : {}),
+        ...(draft.note !== undefined ? { note: draft.note } : {}),
+        ...(draft.eaten_on !== undefined ? { eaten_at: draft.eaten_on } : {}),
+      } : draft;
+      // Reuse the destination's real validation. A preview is NEVER inserted.
+      try {
+        toDestinationCandidate({
+          hub_version: 1, destination: preview.destination, source: sourceFor(context),
+          source_ref: 'preview:' + new Date(context.now()).toISOString().slice(0, 10),
+          idempotency_key: 'synthetic-preview-0001',
+          created_at: new Date(context.now()).toISOString(),
+          candidate_type: preview.type, payload,
+        });
+      } catch {
+        throw new ToolInputError('Please check the record fields, date and field limits before previewing.');
+      }
       return {
-        content: [{ type: 'text', text: 'Reading draft prepared for letterbookxd: ' + JSON.stringify(draft) + '. Nothing has been saved. Review and submit the card; when unavailable, ask the user to confirm before proposing.' }],
-        structuredContent: { draft, destination: 'letterbookxd', status: 'preview' },
+        content: [{ type: 'text', text: 'Editable ' + preview.destination + ' proposal preview, NOT saved: ' + JSON.stringify(draft) +
+          '. Show the card. If no interactive card appears, ask the owner to confirm the details before proposing via the regular tool.' }],
+        structuredContent: { variant: preview.variant, draft, destination: preview.destination, status: 'preview' },
       };
     }
     let outcome;
