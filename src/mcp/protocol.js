@@ -21,6 +21,9 @@ const INSTRUCTIONS = 'Life Hub collects PENDING PROPOSALS for personal archives 
   'Each destination validates its own fields. No candidate becomes a real record until the owner approves it, in the destination app or with the buttons of a Life Hub card; you never approve, edit or reject. ' +
   'Never claim the record was saved, only that a proposal was submitted for review.';
 const MAX_BODY = 64 * 1024;
+/** How long clients may cache discovery and the tool list. Short, so a deploy reaches open chats quickly. */
+const CACHE_MS = 300000;
+const UI_EXTENSION = 'io.modelcontextprotocol/ui';
 
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const json = (status, value, extra = {}) => new Response(JSON.stringify(value), { status, headers: { ...HEADERS, ...extra } });
@@ -94,23 +97,25 @@ export async function handleMcpRequest(request, context) {
   // UI resources: ChatGPT's reading preview, and the Claude cards. Codex gets neither.
   const isClaude = (context.source ?? 'claude') === 'claude';
   const hasResources = isChatgpt || isClaude;
+  // Advertise MCP Apps support (SEP-1724 extension negotiation) wherever UI resources are served.
+  const uiExtension = hasResources ? { extensions: { [UI_EXTENSION]: { mimeTypes: ['text/html;profile=mcp-app'] } } } : {};
 
   switch (method) {
     case 'initialize': {
       const requested = params.protocolVersion;
       const protocolVersion = LEGACY_VERSIONS.includes(requested) ? requested : LEGACY_VERSIONS[0];
-      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(hasResources ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
+      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(hasResources ? { resources: { listChanged: false } } : {}), ...uiExtension }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'server/discover':
       if (era !== 'modern') return notFound();
-      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(hasResources ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
+      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(hasResources ? { resources: {} } : {}), ...uiExtension }, instructions: INSTRUCTIONS, ttlMs: CACHE_MS, cacheScope: 'private' });
     case 'ping':
       if (era !== 'legacy') return notFound();
       return ok({});
     case 'tools/list':
       // ChatGPT keeps its reading preview; Claude's propose tools point at cards (+ app-only card tools
       // with hub:approve); Codex sees the plain proposal tools.
-      return ok({ tools: toolsFor(context), ttlMs: 3600000, cacheScope: 'private' });
+      return ok({ tools: toolsFor(context), ttlMs: CACHE_MS, cacheScope: 'private' });
     case 'resources/list':
       if (!hasResources) return notFound();
       return ok({ resources: isChatgpt ? [{

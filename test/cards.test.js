@@ -46,6 +46,8 @@ test('tools/list: card tools are app-only and only for a Claude grant with hub:a
     assert.ok(!names(plain).some((n) => n.startsWith('card_')));
     const meal = plain.result.tools.find((t) => t.name === 'propose_food_meal');
     assert.equal(meal._meta.ui.resourceUri, 'ui://life-hub/card-food.html');
+    assert.equal(meal._meta['ui/resourceUri'], 'ui://life-hub/card-food.html');
+    assert.ok(plain.result.ttlMs <= 300000, 'a deploy must reach open chats within minutes');
     // Destinations without a card keep a plain tool.
     assert.equal(plain.result.tools.find((t) => t.name === 'propose_memory')._meta, undefined);
 
