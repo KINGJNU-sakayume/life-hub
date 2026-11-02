@@ -20,11 +20,12 @@ import {
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
 import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
-import { DESTINATIONS, redirectUriFor } from '../destinations.js';
+import { DESTINATIONS, redirectUriFor, appUrlFor } from '../destinations.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
 import { handleInboxRequest } from '../inbox/api.js';
 import { handleSpotify } from '../spotify/routes.js';
 import { pollSpotify } from '../spotify/sync.js';
+import { deleteExpiredTickets } from './store.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
@@ -56,6 +57,8 @@ export const mcpHandler = {
       allowedOrigins: [env.HUB_PUBLIC_ORIGIN, role === 'claude' ? 'https://claude.ai' : 'https://chatgpt.com'],
       // Per-destination tools check these; grants made before a destination existed lack its scope.
       scopes: [...(ctx.auth?.scope ?? [])],
+      // Card links open the destination app (only apps configured with a redirect URI).
+      appUrls: Object.fromEntries(DESTINATIONS.map((d) => [d.id, appUrlFor(env, d)]).filter(([, u]) => u)),
     });
   },
 };
@@ -139,5 +142,7 @@ export default {
   /** Cron trigger (wrangler `triggers.crons`): hourly Spotify collection for potcast. Off unless configured. */
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(pollSpotify(env).catch((error) => console.warn('spotify poll failed', error?.message)));
+    // Card tickets expire after 7 days; drop them so D1 stays small.
+    if (env.DB) ctx.waitUntil(deleteExpiredTickets(env.DB, new Date().toISOString()).catch(() => {}));
   },
 };

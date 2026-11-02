@@ -6,6 +6,8 @@
  * For each entry the hub serves an OAuth protected resource at `path` (scope `scope`, token role
  * `role`), a client profile chosen by the exact redirect URI in `redirectVar`, and the inbox API at
  * `<path>/v1`. Without the redirect variable the app's profile and API are off.
+ * Optional: `card` (a Claude conversation card; `approve` only once the app syncs approved candidates) and
+ * `refKinds` (reference lists the app may upload for card pickers).
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
@@ -19,11 +21,15 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'food', app: 'PALATE', role: 'palate', path: '/palate', scope: 'food:inbox', legacyProposeScope: 'food:propose',
     redirectVar: 'HUB_PALATE_REDIRECT_URI', types: ['meal', 'wish'], adapter: toFoodCandidate, label: 'PALATE',
+    // Conversation card (src/mcp/cards). approve stays false until PALATE syncs `approved` candidates.
+    card: { approve: false },
     grants: 'Life Hub 수신함의 <strong>음식 후보를 가져오고</strong>, PALATE에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'kyeokyeoi', app: '켜켜이', role: 'kyeokyeoi', path: '/kyeokyeoi', scope: 'kyeokyeoi:inbox', legacyProposeScope: 'kyeokyeoi:propose',
     redirectVar: 'HUB_KYEOKYEOI_REDIRECT_URI', types: ['memory', 'visit'], adapter: toKyeokyeoiCandidate, label: 'kyeokyeoi',
+    // Reference lists the app may publish for card pickers (PUT /kyeokyeoi/v1/refs/<kind>).
+    refKinds: ['regions'],
     grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
@@ -61,6 +67,15 @@ const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
 export function redirectUriFor(env, destination) {
   const value = env[destination.redirectVar];
   return typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300 ? value : null;
+}
+
+/** The app's public start page for card links: the redirect URI's origin + first path segment. */
+export function appUrlFor(env, destination) {
+  const redirect = redirectUriFor(env, destination);
+  if (!redirect) return null;
+  const url = new URL(redirect);
+  const first = url.pathname.split('/').filter(Boolean)[0];
+  return url.origin + '/' + (first ? first + '/' : '');
 }
 
 /** Adapter validation failures (no user data in the message): reported as fixable input errors. */

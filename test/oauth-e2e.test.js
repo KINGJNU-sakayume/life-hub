@@ -350,3 +350,45 @@ test('without OAuth configuration, OAuth routes fail closed and the P1 API still
     assert.equal(page.status, 503);
   } finally { env.DB.close(); }
 });
+
+test('hub:approve is granted only to Claude, only when the owner ticks it with the password', async () => {
+  const env = makeEnv();
+  try {
+    async function connect(clientId, redirectUri, fields) {
+      const { verifier, challenge } = await pkce();
+      const page = await openConsent(env, clientId, challenge, 'state-approve', redirectUri);
+      const approved = await submit(env, page, { decision: 'approve', password: PASSWORD, ...fields });
+      assert.equal(approved.status, 302);
+      const code = new URL(approved.headers.get('Location')).searchParams.get('code');
+      const tokens = await token(env, { grant_type: 'authorization_code', code, redirect_uri: redirectUri,
+        client_id: clientId, code_verifier: verifier, resource: RESOURCE });
+      assert.equal(tokens.status, 200, JSON.stringify(tokens.body));
+      return { page, tokens: tokens.body };
+    }
+    const { client_id: claude } = await (await register(env)).json();
+    const plain = await connect(claude, CALLBACK, {});
+    assert.match(plain.page.html, /name="optional_scope" value="hub:approve"/);
+    assert.match(plain.page.html, /Claude 대화 카드에서 승인도 허용/);
+    assert.equal(plain.tokens.scope, 'hub:propose', 'unticked: proposal-only');
+
+    // Forged extra scopes are ignored; only hub:approve can be added, and only for Claude.
+    // (A new grant for the same client replaces the earlier one, so the full grant comes last.)
+    const forged = await connect(claude, CALLBACK, { optional_scope: 'food:inbox' });
+    assert.equal(forged.tokens.scope, 'hub:propose');
+    const full = await connect(claude, CALLBACK, { optional_scope: 'hub:approve' });
+    assert.deepEqual(full.tokens.scope.split(' ').sort(), ['hub:approve', 'hub:propose']);
+
+    const listed = await (await mcp(env, full.tokens.access_token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
+    assert.ok(listed.result.tools.some((t) => t.name === 'card_approve' && t._meta.ui.visibility[0] === 'app'));
+    const proposed = await (await mcp(env, full.tokens.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'propose_food_wish', arguments: { wish_kind: 'try_menu', name: 'Synthetic card tart' } } })).json();
+    assert.match(proposed.result._meta['life-hub/card'].ticket, /^[A-Za-z0-9_-]{43}$/);
+
+    const { client_id: codex } = await (await register(env, [CODEX_CALLBACK], 'Codex CLI')).json();
+    const codexGrant = await connect(codex, CODEX_CALLBACK, { optional_scope: 'hub:approve' });
+    assert.doesNotMatch(codexGrant.page.html, /optional_scope/);
+    assert.equal(codexGrant.tokens.scope, 'hub:propose');
+    const codexList = await (await mcp(env, codexGrant.tokens.access_token, { jsonrpc: '2.0', id: 3, method: 'tools/list' })).json();
+    assert.ok(!codexList.result.tools.some((t) => t.name.startsWith('card_')));
+  } finally { env.DB.close(); }
+});

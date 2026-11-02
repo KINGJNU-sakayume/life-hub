@@ -64,7 +64,7 @@ export async function handleRequest(request, env) {
     if (url.pathname === '/v1/candidates' && request.method === 'GET') {
       requireRole(actor, ['owner']);
       const status = url.searchParams.get('status');
-      if (status !== null && !['pending', 'rejected', 'confirmed'].includes(status))
+      if (status !== null && !['pending', 'approved', 'rejected', 'confirmed'].includes(status))
         throw new StoreFailure(400, 'Invalid status filter');
       const limit = boundedInteger(url.searchParams.get('limit'), 50, 100, 1);
       return send({ candidates: await listCandidates(env.DB, actor.ownerId, status, limit) });

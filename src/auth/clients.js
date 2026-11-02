@@ -38,6 +38,8 @@ export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexC
 export const SCOPES = Object.freeze({
   /** One scope for every conversational proposal tool, so new destinations need no reconnect. */
   HUB_PROPOSE: 'hub:propose',
+  /** Owner approval from a Claude conversation card (app-only tools + single-use ticket). Opt-in at consent. */
+  HUB_APPROVE: 'hub:approve',
   // Per-destination proposal scopes from earlier grants; still honored.
   PROPOSE: 'food:propose', KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose',
   INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
@@ -46,13 +48,19 @@ export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KY
 
 /** Every scope the authorization server knows: MCP proposals, legacy scopes, and destination inboxes. */
 export const ALL_SCOPES = Object.freeze([
-  SCOPES.HUB_PROPOSE, ...DESTINATIONS.map((d) => d.scope), ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
+  SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope), ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
 ]);
 
 export function clientProfiles(env) {
   const profiles = [{
     id: 'claude', role: 'claude', redirectUri: CLAUDE_CALLBACK,
     resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.HUB_PROPOSE],
+    // Granted only when the owner ticks it on the consent page (with the password). Claude only.
+    optionalScopes: [{
+      scope: SCOPES.HUB_APPROVE,
+      label: 'Claude 대화 카드에서 승인도 허용',
+      detail: '카드의 「승인」·「거절」 버튼으로만 쓸 수 있고, Claude가 스스로 승인할 수는 없어요. 승인한 기록은 다음에 앱을 열 때 저장돼요.',
+    }],
     // Older MCP clients may omit `resource`; the authorization server defaults it to /mcp.
     allowMissingResource: true,
     title: 'Claude',

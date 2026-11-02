@@ -89,6 +89,8 @@ h1{font-size:1.25rem;margin:0 0 12px}p{margin:8px 0}.muted{color:var(--muted);fo
 .warn{color:var(--warn)}code{font-size:.9em}
 label{display:block;margin:18px 0 6px;font-weight:600}
 input[type=password]{box-sizing:border-box;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);font-size:16px}
+.opt{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:12px;border:1px solid var(--line);border-radius:10px;font-weight:400}
+.opt input{width:20px;height:20px;margin:2px 0 0;flex:none}
 .row{display:flex;gap:10px;margin-top:18px}button,a.btn{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);font-size:16px;text-align:center;text-decoration:none;color:var(--fg);background:transparent}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:600}
 </style><main><div class="card">${body}</div></main></html>`;
@@ -114,6 +116,8 @@ ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권�
 <form method="post" action="/authorize">
 <input type="hidden" name="handle" value="${escapeHtml(handle)}">
 <input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">
+${(profile.optionalScopes ?? []).map((o, i) => `<label class="opt"><input type="checkbox" name="optional_scope" value="${escapeHtml(o.scope)}" id="opt${i}">
+<span><strong>${escapeHtml(o.label)}</strong><br><span class="muted">${escapeHtml(o.detail)}</span></span></label>`).join('\n')}
 <label for="pw">Life Hub 소유자 비밀번호</label>
 <input id="pw" type="password" name="password" autocomplete="current-password" required>
 <div class="row"><button type="submit" name="decision" value="deny">거절</button>
@@ -170,11 +174,14 @@ export async function handleAuthorize(request, env, oauth, errors) {
     const approved = await oauth.approveConsent(request, handle, { scope: [] });
     const profile = profileFor(env, approved.request);
     if (!profile) return notAllowed(env);
+    // The form may only switch on the optional scopes this profile offers (e.g. hub:approve for Claude).
+    const ticked = form.getAll('optional_scope').map(String);
+    const extra = (profile.optionalScopes ?? []).map((o) => o.scope).filter((s) => ticked.includes(s));
     const { redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: env.HUB_OWNER_ID,
       metadata: { connector: profile.id },
-      scope: [...profile.scopes],
+      scope: [...profile.scopes, ...extra],
       props: { ownerId: env.HUB_OWNER_ID, role: profile.role },
     });
     approved.headers.set('Location', redirectTo);
