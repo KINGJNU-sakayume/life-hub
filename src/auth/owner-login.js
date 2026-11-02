@@ -123,7 +123,7 @@ ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권�
 }
 
 function notAllowed(env) {
-  const names = [...clientProfiles(env).map((p) => p.title), 'Codex (loopback)'].join(', ');
+  const names = [...clientProfiles(env).map((p) => p.title), 'Codex (loopback)', 'ChatGPT'].join(', ');
   return messagePage(403, '허용되지 않은 앱', `이 Life Hub는 ${names} 연결만 허용해요.`);
 }
 
