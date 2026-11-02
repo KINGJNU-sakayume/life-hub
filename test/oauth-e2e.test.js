@@ -253,6 +253,76 @@ test('Codex OAuth + PKCE submits independently attributed pending proposals and 
   } finally { env.DB.close(); }
 });
 
+
+const CHATGPT_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
+test('ChatGPT MCP OAuth has strict callbacks and can preview, edit and propose a reading record', async () => {
+  const env = makeEnv();
+  try {
+    const blocked = [
+      'https://evil.example/callback',
+      'https://chatgpt.com/connector_platform_oauth_redirect/evil',
+      'https://chatgpt.com/connector_platform_oauth_redirect?target=evil',
+      'https://chatgpt.com/connector/oauth/bad',
+      'https://chatgpt.com.evil.example/connector_platform_oauth_redirect',
+    ];
+    for (const uri of blocked) assert.equal((await register(env, [uri], 'spoofed')).status, 400, uri);
+    assert.equal((await register(env, [CHATGPT_CALLBACK, CALLBACK])).status, 400);
+    assert.equal((await register(env, ['https://chatgpt.com/connector/oauth/valid_Callback_0123'])).status, 201);
+
+    const registered = await register(env, [CHATGPT_CALLBACK], 'ChatGPT Life Hub');
+    assert.equal(registered.status, 201, await registered.text());
+    const { client_id: clientId } = await (await register(env, [CHATGPT_CALLBACK], 'ChatGPT Life Hub')).json();
+    const { verifier, challenge } = await pkce();
+    const page = await openConsent(env, clientId, challenge, 'gpt-state', CHATGPT_CALLBACK);
+    assert.equal(page.response.status, 200, page.html);
+    assert.match(page.html, /ChatGPT/);
+    assert.match(page.response.headers.get('Content-Security-Policy'), /chatgpt\\.com/);
+    const approved = await submit(env, page, { decision: 'approve', password: PASSWORD });
+    assert.equal(approved.status, 302);
+    const target = new URL(approved.headers.get('Location'));
+    assert.equal(target.origin + target.pathname, CHATGPT_CALLBACK);
+    assert.equal(target.searchParams.get('state'), 'gpt-state');
+    const tokens = await token(env, {
+      grant_type: 'authorization_code', code: target.searchParams.get('code'), redirect_uri: CHATGPT_CALLBACK,
+      client_id: clientId, code_verifier: verifier, resource: RESOURCE,
+    });
+    assert.equal(tokens.status, 200, JSON.stringify(tokens.body));
+    assert.equal(tokens.body.scope, 'hub:propose');
+
+    const invoke = async (method, params, id=1) =>
+      (await (await mcp(env, tokens.body.access_token, { jsonrpc:'2.0', id, method, params })).json()).result;
+    const tools = await invoke('tools/list');
+    assert.equal(tools.tools.find((t) => t.name === 'preview_reading_record')._meta.ui.resourceUri,
+      'ui://life-hub/reading-preview.html');
+    const resources = await invoke('resources/list');
+    assert.equal(resources.resources[0].mimeType, 'text/html;profile=mcp-app');
+    const ui = await invoke('resources/read', { uri:'ui://life-hub/reading-preview.html' });
+    assert.match(ui.contents[0].text, /Life Hub/);
+    assert.match(ui.contents[0].text, /propose_reading_record/);
+
+    const draft = { title:'가상의 책 A', state:'reading', current_page:115, date:'2026-11-02' };
+    const preview = await invoke('tools/call', { name:'preview_reading_record', arguments:draft }, 2);
+    assert.equal(preview.structuredContent.status, 'preview');
+    assert.deepEqual(preview.structuredContent.draft, draft);
+    assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM inbox').bind().first()).n, 0);
+
+    // UI calls the same writing tool after the user reviews/edits; no direct destination write.
+    const edited = { ...draft, current_page:119 };
+    const proposal = await invoke('tools/call', { name:'propose_reading_record', arguments:edited }, 3);
+    assert.equal(proposal.structuredContent.status, 'pending', JSON.stringify(proposal));
+    const row = await env.DB.prepare('SELECT source, destination, status, envelope_json FROM inbox').bind().first();
+    assert.equal(row.source, 'chatgpt');
+    assert.equal(row.destination, 'letterbookxd');
+    assert.equal(row.status, 'pending');
+    assert.equal(JSON.parse(row.envelope_json).payload.current_page, 119);
+    const id = proposal.structuredContent.candidate_id;
+    const status = await invoke('tools/call', { name:'get_proposal_status', arguments:{candidate_id:id} }, 4);
+    assert.equal(status.structuredContent.status, 'pending');
+    const crossUse = await call(env, '/v1/candidates', { headers: { Authorization:'Bearer ' + tokens.body.access_token } });
+    assert.equal(crossUse.status, 401);
+  } finally { env.DB.close(); }
+});
+
 test('deny returns access_denied to Claude without issuing a code', async () => {
   const env = makeEnv();
   try {
