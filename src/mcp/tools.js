@@ -1,5 +1,5 @@
 /**
- * MCP tools exposed to an authorized Claude connection.
+ * MCP tools exposed to an authorized Claude or Codex connection.
  *
  * Every tool only PROPOSES a candidate into the private inbox (status: pending) or reads the status
  * of a candidate this connector proposed. Nothing here can approve, confirm, edit or delete records,
@@ -10,7 +10,12 @@ import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js'
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
 import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 
-const SOURCE = 'claude';
+function sourceFor(context) {
+  // This is injected by the authenticated MCP handler, never from tool arguments.
+  const source = context.source ?? 'claude'; // Legacy direct unit-test contexts.
+  if (source !== 'claude' && source !== 'codex') throw new Error('Invalid MCP source');
+  return source;
+}
 const pendingNote = (app) => `Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in ${app}.`;
 const NOT_A_RECORD = pendingNote('PALATE');
 
@@ -279,9 +284,9 @@ function pick(args, schema) {
   return out;
 }
 
-async function idempotencyKey(destination, candidateType, payload) {
+async function idempotencyKey(destination, candidateType, payload, source) {
   // Food keeps its original formula so earlier proposals still de-duplicate.
-  const parts = destination === 'food' ? [SOURCE, candidateType, canonical(payload)] : [SOURCE, destination, candidateType, canonical(payload)];
+  const parts = destination === 'food' ? [source, candidateType, canonical(payload)] : [source, destination, candidateType, canonical(payload)];
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)));
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -290,12 +295,13 @@ const appName = (destination) => destinationById(destination)?.app ?? destinatio
 
 async function propose(context, destination, candidateType, payload) {
   if (!acceptedScopes(destination).some((s) => (context.scopes ?? []).includes(s)))
-    throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub connector in Claude's settings, then try again.`);
+    throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub MCP server in their client, then try again.`);
+  const source = sourceFor(context);
   const createdAt = new Date(context.now()).toISOString();
   const envelope = {
-    hub_version: 1, destination, source: SOURCE,
-    source_ref: 'claude-mcp:' + createdAt.slice(0, 10),
-    idempotency_key: await idempotencyKey(destination, candidateType, payload),
+    hub_version: 1, destination, source,
+    source_ref: source + '-mcp:' + createdAt.slice(0, 10),
+    idempotency_key: await idempotencyKey(destination, candidateType, payload, source),
     created_at: createdAt, candidate_type: candidateType, payload,
   };
   let result;
@@ -345,7 +351,7 @@ export async function callTool(name, args, context) {
       // The old name is still answered for clients that cached the previous tool list.
       const { candidate_id: id } = pick(args, statusSchema);
       if (!/^[0-9a-f-]{36}$/.test(id)) throw new ToolInputError('candidate_id must be the id returned by a propose tool.');
-      const found = await getCandidate(context.db, context.ownerId, id, SOURCE);
+      const found = await getCandidate(context.db, context.ownerId, id, sourceFor(context));
       if (!found) throw new ToolInputError('No proposal with that candidate_id was made through this connector.');
       const structured = { candidate_id: found.id, destination: found.destination, status: found.status, received_at: found.received_at, reviewed_at: found.reviewed_at ?? null };
       outcome = { text: `Candidate ${found.id} (${appName(found.destination)}) is ${found.status}.`, structured };
