@@ -37,6 +37,7 @@ dl{margin:0;display:grid;grid-template-columns:76px minmax(0,1fr);row-gap:6px;fo
 .callout{margin:0;padding:10px 12px;border-radius:10px;font-size:13px}.c-info{background:var(--info);color:var(--info-ink)}.c-err{background:var(--err);color:var(--err-ink)}
 .foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--rule);padding-top:10px}
 .fl{margin:0;flex:1 1 200px;font-size:13px;color:var(--mute)}.grow{flex:1}
+.line{margin:0;font-size:13px;color:var(--mute)}.line .link{min-height:0;padding:0;font-size:13px}
 button{font:inherit}
 .btn{min-height:44px;padding:0 18px;border-radius:10px;font-size:14px;font-weight:600;border:1px solid var(--field);background:var(--card);color:var(--ink);cursor:pointer}
 .pri{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}.danger{background:#b3261e;border-color:#b3261e;color:#fff}
@@ -97,7 +98,7 @@ function footer(){var c=S.card,a=esc(c.app);
   var dis=S.busy?' disabled':'';
   var right=c.approve==='ok'?'<button type="button" class="btn" data-act="edit"'+dis+'>수정</button><button type="button" class="btn pri" data-act="approve"'+dis+'>'+(S.busy?'승인 중…':'승인')+'</button>':
     '<button type="button" class="btn" data-act="edit"'+dis+'>수정</button>';
-  return (c.approve==='ok'?'':'<p class="fl" style="margin:0">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot"><button type="button" class="link" data-act="ask"'+dis+'>거절</button><span class="grow"></span>'+right+'</div>';}
+  return (c.approve==='ok'?'':'<p class="line">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot"><button type="button" class="link" data-act="ask"'+dis+'>거절</button><span class="grow"></span>'+right+'</div>';}
 function callout(){var c=S.card;
   if(S.error==='expired')return '<p class="callout c-err" role="alert">이 카드는 만료됐어요.</p>';
   if(S.error==='conflict')return '<p class="callout c-err" role="alert">다른 곳에서 먼저 바뀌었어요. 최신 내용을 불러와 다시 확인해 주세요.</p>';
