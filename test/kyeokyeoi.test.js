@@ -19,6 +19,11 @@ test('kyeokyeoi adapter accepts the user\'s words and stated dates only', () => 
   assert.equal(memory.schema_version, 1);
   assert.equal(memory.candidate_type, 'memory');
   assert.ok(toKyeokyeoiCandidate(hub('memory', { title: 'x', year: 2019, month: 8, day: 15 })));
+  const concert = toKyeokyeoiCandidate(hub('memory', { title: '더 위켄드 콘서트', time_text: '10월 8일', year: 2026, month: 10, day: 8,
+    place_text: '고양종합운동장', region_hint: '경기 고양시 일산서구', song_artist: 'The Weeknd' }));
+  assert.equal(concert.payload.region_hint, '경기 고양시 일산서구');
+  assert.equal(concert.payload.song_artist, 'The Weeknd');
+  assert.ok(toKyeokyeoiCandidate(hub('visit', { place_text: '고양종합운동장', region_hint: '경기 고양시 일산서구', visited_on: '2026-10-08' })));
   assert.ok(toKyeokyeoiCandidate(hub('visit', { place_text: '전주시', visited_on: '2026-10-03' })));
   assert.equal(toDestinationCandidate(hub('visit', { place_text: '전주시' })).payload.place_text, '전주시');
 
@@ -33,6 +38,9 @@ test('kyeokyeoi adapter accepts the user\'s words and stated dates only', () => 
     ['memory', { title: 'x', emotions: ['행복', '행복'] }],
     ['memory', { title: 'x', region_code: '11010' }],
     ['memory', { title: 'x', photos: ['data:...'] }],
+    ['memory', { title: 'x', region_hint: 'x'.repeat(61) }],
+    ['memory', { title: 'x', song_artist: '' }],
+    ['visit', { place_text: 'x', song_artist: 'y' }],
     ['visit', { place_text: '' }],
     ['visit', { place_text: '서울', visited_on: '2026-13-01' }],
     ['visit', { place_text: '서울', memory: 'smuggled' }],
@@ -48,12 +56,18 @@ test('propose_memory and propose_region_visit store pending kyeokyeoi candidates
       place_text: '서울 관악구', emotions: ['설렘'] }, ctx(db));
     assert.equal(memory.isError, undefined, JSON.stringify(memory));
     assert.match(memory.content[0].text, /켜켜이/);
+    const concert = await callTool('propose_memory', { title: '더 위켄드 콘서트', time_text: '10월 8일', year: 2026, month: 10, day: 8,
+      place_text: '고양종합운동장', region_hint: '경기 고양시 일산서구', song_artist: 'The Weeknd' }, ctx(db));
+    assert.equal(concert.isError, undefined, JSON.stringify(concert));
+    const stored = JSON.parse((await db.prepare('SELECT envelope_json FROM inbox WHERE id=?').bind(concert.structuredContent.candidate_id).first()).envelope_json);
+    assert.deepEqual(stored.payload, { title: '더 위켄드 콘서트', time_text: '10월 8일', year: 2026, month: 10, day: 8,
+      place_text: '고양종합운동장', region_hint: '경기 고양시 일산서구', song_artist: 'The Weeknd' });
     const visit = await callTool('propose_region_visit', { place_text: '강릉', visited_on: '2026-10-12' }, ctx(db));
     assert.equal(visit.structuredContent.status, 'pending');
 
     const rows = (await db.prepare('SELECT destination, source, envelope_json FROM inbox ORDER BY received_at').bind().all()).results;
-    assert.deepEqual(rows.map((r) => r.destination), ['kyeokyeoi', 'kyeokyeoi']);
-    assert.deepEqual(rows.map((r) => JSON.parse(r.envelope_json).candidate_type).sort(), ['memory', 'visit']);
+    assert.deepEqual(rows.map((r) => r.destination), ['kyeokyeoi', 'kyeokyeoi', 'kyeokyeoi']);
+    assert.deepEqual(rows.map((r) => JSON.parse(r.envelope_json).candidate_type).sort(), ['memory', 'memory', 'visit']);
     // A memory with a place does not create a visit.
     assert.equal(rows.filter((r) => JSON.parse(r.envelope_json).candidate_type === 'visit').length, 1);
 

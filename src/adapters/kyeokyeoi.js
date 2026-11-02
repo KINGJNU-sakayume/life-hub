@@ -4,8 +4,10 @@
  * 켜켜이 keeps memories and independently confirmed region visits. Rules from its integration contract
  * (kyeokyeoi docs/LIFEHUB_INTEGRATION.md), enforced by keeping the shapes minimal:
  * - A memory never implies a visit; a visit candidate exists only when the user says they went.
- * - Place and time stay in the user's words (`place_text`, `time_text`); 켜켜이 resolves the region
- *   code and time type during the owner's review. Optional numeric date parts only when stated.
+ * - Place and time keep the user's words (`place_text`, `time_text`). The assistant may add its
+ *   resolution of the place to a 시군구 name (`region_hint`) and date parts it resolved (e.g. the current
+ *   year for "10월 8일"); 켜켜이 only pre-fills them and the owner confirms before anything is saved.
+ * - Music the user mentioned may fill the song fields (`song_artist`, `song_title`).
  * - No photos, no transcripts, no region codes from the assistant.
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
@@ -16,9 +18,10 @@ export const KYEOKYEOI_EMOTIONS = Object.freeze(['행복', '설렘', '신남', '
 const intIn = (v, lo, hi) => v === undefined || (Number.isInteger(v) && v >= lo && v <= hi);
 
 function validMemory(p) {
-  if (!hasOnly(p, ['title', 'memo', 'time_text', 'year', 'month', 'day', 'place_text', 'emotions']) ||
+  if (!hasOnly(p, ['title', 'memo', 'time_text', 'year', 'month', 'day', 'place_text', 'region_hint', 'emotions', 'song_artist', 'song_title']) ||
     !requiredText(p.title, 80) || !optionalText(p.memo, 2000) || !optionalText(p.time_text, 100) ||
-    !optionalText(p.place_text, 100) || !intIn(p.year, 1900, 2100) || !intIn(p.month, 1, 12) || !intIn(p.day, 1, 31))
+    !optionalText(p.place_text, 100) || !optionalText(p.region_hint, 60) || !optionalText(p.song_artist, 100) ||
+    !optionalText(p.song_title, 100) || !intIn(p.year, 1900, 2100) || !intIn(p.month, 1, 12) || !intIn(p.day, 1, 31))
     return false;
   if (p.month !== undefined && p.year === undefined) return false;
   if (p.day !== undefined) {
@@ -32,7 +35,8 @@ function validMemory(p) {
   return true;
 }
 function validVisit(p) {
-  return hasOnly(p, ['place_text', 'visited_on', 'note']) && requiredText(p.place_text, 100) &&
+  return hasOnly(p, ['place_text', 'region_hint', 'visited_on', 'note']) && requiredText(p.place_text, 100) &&
+    optionalText(p.region_hint, 60) &&
     (p.visited_on === undefined || validDate(p.visited_on)) && optionalText(p.note, 500);
 }
 
