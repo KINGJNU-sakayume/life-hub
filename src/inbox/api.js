@@ -17,7 +17,7 @@ import { toDestinationCandidate } from '../adapters/index.js';
 import { destinationById } from '../destinations.js';
 import { listDestinationCandidates, confirmCandidateByKey, rejectCandidateByKey, StoreFailure } from '../server/store.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'manual', 'spotify']);
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** Candidate types each destination can confirm, i.e. the allowed receipt `entity_type`s. */

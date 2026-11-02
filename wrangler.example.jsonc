@@ -5,6 +5,8 @@
   // Required for OAuth Client ID Metadata Documents (SSRF protection on outbound metadata fetches).
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
+  // Hourly Spotify collection for potcast (does nothing unless Spotify is configured and linked).
+  "triggers": { "crons": ["23 * * * *"] },
   "vars": {
     // Exact public origin of this Worker, no trailing slash. The MCP connector URL is <origin>/mcp.
     "HUB_PUBLIC_ORIGIN": "REPLACE_WITH_YOUR_PUBLIC_ORIGIN",
@@ -21,7 +23,10 @@
     // Optional: 역 도장깨기 (sub)'s Life Hub callback page URL. Empty disables its inbox API.
     "HUB_SUB_REDIRECT_URI": "REPLACE_WITH_YOUR_SUB_REDIRECT_URI",
     // Optional: AniMan's Life Hub callback page URL. Empty disables its inbox API.
-    "HUB_ANIMAN_REDIRECT_URI": "REPLACE_WITH_YOUR_ANIMAN_REDIRECT_URI"
+    "HUB_ANIMAN_REDIRECT_URI": "REPLACE_WITH_YOUR_ANIMAN_REDIRECT_URI",
+    // Optional: Spotify app client ID (public, 32 hex) for the hourly potcast collection. Empty disables it.
+    // Also needs the HUB_SPOTIFY_TOKEN_KEY secret (Cloudflare dashboard) and the redirect URI <origin>/spotify/callback in the Spotify app.
+    "HUB_SPOTIFY_CLIENT_ID": "REPLACE_WITH_YOUR_SPOTIFY_CLIENT_ID"
   },
   "d1_databases": [
     {

@@ -14,7 +14,7 @@ export const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const OWNER_ID = /^[a-zA-Z0-9_-]{6,128}$/;
 const BUCKET = 'owner';
 
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+export const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function ownerLoginConfigured(env) {
   return OWNER_ID.test(env.HUB_OWNER_ID ?? '') &&
@@ -69,7 +69,7 @@ export function safeReturnTo(value) {
 const csp = (formOrigins = []) => "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; " +
   "frame-ancestors 'none'; form-action " + ["'self'", ...formOrigins].join(' ');
 
-function page(status, title, body, extraHeaders, formOrigins = []) {
+export function page(status, title, body, extraHeaders, formOrigins = []) {
   const headers = new Headers(extraHeaders);
   headers.set('Content-Type', 'text/html; charset=utf-8');
   headers.set('Cache-Control', 'no-store');

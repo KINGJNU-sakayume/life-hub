@@ -23,6 +23,8 @@ import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../aut
 import { DESTINATIONS, redirectUriFor } from '../destinations.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
 import { handleInboxRequest } from '../inbox/api.js';
+import { handleSpotify } from '../spotify/routes.js';
+import { pollSpotify } from '../spotify/sync.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
@@ -127,10 +129,15 @@ export default {
         return s.inboxes.get(d.id).fetch(request, env, ctx);
       }
     }
+    if (path === '/spotify' || path.startsWith('/spotify/')) return handleSpotify(request, env);
     if (path === '/authorize')
       return handleAuthorize(request, env, s.authorizationServer.getOAuthApi(env), { AuthorizationError, CimdFetchError });
     if (path.startsWith('/oauth/') || path.startsWith('/.well-known/'))
       return s.authorizationServer.fetch(request, env, ctx);
     return handleRequest(request, env);
+  },
+  /** Cron trigger (wrangler `triggers.crons`): hourly Spotify collection for potcast. Off unless configured. */
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(pollSpotify(env).catch((error) => console.warn('spotify poll failed', error?.message)));
   },
 };
