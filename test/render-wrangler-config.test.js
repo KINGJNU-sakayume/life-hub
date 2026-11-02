@@ -4,20 +4,34 @@ import { readFileSync } from 'node:fs';
 import { renderWranglerConfig } from '../scripts/render-wrangler-config.mjs';
 
 const example = readFileSync(new URL('../wrangler.example.jsonc', import.meta.url), 'utf8');
-const ID = '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b';
+const good = {
+  D1_DATABASE_ID: '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b',
+  KV_NAMESPACE_ID: '0123456789abcdef0123456789ABCDEF',
+  HUB_PUBLIC_ORIGIN: 'https://life-hub-api.example-subdomain.workers.dev/',
+};
 
-test('renders the committed example with a synthetic database ID', () => {
-  const out = renderWranglerConfig(example, ID);
-  assert.ok(out.includes(`"database_id": "${ID}"`));
-  assert.ok(!out.includes('REPLACE_WITH_YOUR_D1_DATABASE_ID'));
-  assert.ok(out.includes('"binding": "DB"'));
+test('renders the committed example with synthetic values', () => {
+  const out = renderWranglerConfig(example, good);
+  assert.ok(out.includes(`"database_id": "${good.D1_DATABASE_ID}"`));
+  assert.ok(out.includes('"id": "0123456789abcdef0123456789abcdef"'));
+  assert.ok(out.includes('"HUB_PUBLIC_ORIGIN": "https://life-hub-api.example-subdomain.workers.dev"'));
+  assert.ok(!out.includes('REPLACE_WITH_YOUR'));
+  assert.ok(out.includes('"binding": "OAUTH_KV"') && out.includes('global_fetch_strictly_public'));
 });
 
-test('rejects missing, malformed or injected database IDs', () => {
-  for (const bad of [undefined, '', 'life-hub-private', `${ID}", "x": "y`, `${ID}\n`.repeat(2)])
-    assert.throws(() => renderWranglerConfig(example, bad), /D1_DATABASE_ID/);
+test('rejects missing, malformed or injected values', () => {
+  const bad = [
+    { D1_DATABASE_ID: undefined }, { D1_DATABASE_ID: 'life-hub-private' },
+    { D1_DATABASE_ID: `${good.D1_DATABASE_ID}", "x": "y` },
+    { KV_NAMESPACE_ID: '' }, { KV_NAMESPACE_ID: 'g'.repeat(32) },
+    { HUB_PUBLIC_ORIGIN: 'http://life-hub-api.example.workers.dev' },
+    { HUB_PUBLIC_ORIGIN: 'https://life-hub-api.example.workers.dev/mcp' },
+    { HUB_PUBLIC_ORIGIN: 'https://evil.example"}, "x": {"' },
+  ];
+  for (const patch of bad)
+    assert.throws(() => renderWranglerConfig(example, { ...good, ...patch }), /must be/, JSON.stringify(patch));
 });
 
-test('refuses an example without exactly one placeholder', () => {
-  assert.throws(() => renderWranglerConfig('{}', ID), /placeholder/);
+test('refuses an example without exactly one placeholder each', () => {
+  assert.throws(() => renderWranglerConfig('{}', good), /placeholder/);
 });

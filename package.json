@@ -1,12 +1,15 @@
 {
   "name": "life-hub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Public code for private-first personal record routing. No personal data in this repository.",
   "engines": {"node": ">=22"},
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4"
+  },
   "scripts": {
-    "test": "node --test",
-    "check": "node --check src/core/candidates.js && node --check src/adapters/food.js && node --check src/server/auth.js && node --check src/server/store.js && node --check src/server/worker.js && node --check scripts/render-wrangler-config.mjs && node --test"
+    "test": "node --import ./scripts/node-test/register.mjs --test",
+    "check": "for f in src/core/candidates.js src/adapters/food.js src/server/auth.js src/server/store.js src/server/worker.js src/server/index.js src/auth/owner-login.js src/mcp/tools.js src/mcp/protocol.js scripts/render-wrangler-config.mjs; do node --check $f || exit 1; done && npm test"
   }
 }

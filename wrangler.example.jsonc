@@ -1,14 +1,27 @@
 {
   "name": "life-hub-api",
-  "main": "src/server/worker.js",
+  "main": "src/server/index.js",
   "compatibility_date": "2026-11-01",
+  // Required for OAuth Client ID Metadata Documents (SSRF protection on outbound metadata fetches).
+  "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
+  "vars": {
+    // Exact public origin of this Worker, no trailing slash. The MCP connector URL is <origin>/mcp.
+    "HUB_PUBLIC_ORIGIN": "REPLACE_WITH_YOUR_PUBLIC_ORIGIN"
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "life-hub-private",
       "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
       "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      // OAuth clients, grants and hashed tokens (managed by @cloudflare/workers-oauth-provider).
+      "binding": "OAUTH_KV",
+      "id": "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
     }
   ]
 }
