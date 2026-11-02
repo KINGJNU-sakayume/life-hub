@@ -141,22 +141,44 @@ root.addEventListener('click',function(e){
     var payload=B.read(v,S.card);if(typeof payload==='string'){S.error=payload;render();return;}
     S.mode='view';act('card_edit',{revision:S.card.revision,payload:payload},'수정했어요.');}
 });
+var ready=false, queued=null;
+function answer(id,result,error){post(error?{jsonrpc:'2.0',id:id,error:error}:{jsonrpc:'2.0',id:id,result:result});}
+function onToolResult(params){take(params);render();
+  // A card re-drawn from conversation history shows the proposal-time state; load the current one quietly.
+  if(S.ticket&&S.card&&!S.synced){S.synced=true;request('tools/call',{name:'card_refresh',arguments:{candidate_id:S.card.candidate_id,ticket:S.ticket}}).then(function(r){
+    if(r&&!r.isError){take(r);render();}else if(r&&r.structuredContent&&r.structuredContent.error==='expired'){S.error='expired';render();}},function(){});}}
 window.addEventListener('message',function(e){
   if(e.source!==window.parent)return;var m=e.data;if(!m||m.jsonrpc!=='2.0')return;
-  if(m.id!=null&&waiting[m.id]){var w=waiting[m.id];delete waiting[m.id];m.error?w.no(m.error):w.ok(m.result);return;}
-  if(m.method==='ui/notifications/tool-result'){take(m.params);render();
-    // A card re-drawn from conversation history shows the proposal-time state; load the current one quietly.
-    if(S.ticket&&S.card&&!S.synced){S.synced=true;request('tools/call',{name:'card_refresh',arguments:{candidate_id:S.card.candidate_id,ticket:S.ticket}}).then(function(r){
-      if(r&&!r.isError){take(r);render();}else if(r&&r.structuredContent&&r.structuredContent.error==='expired'){S.error='expired';render();}},function(){});}}
+  // A response to one of our requests.
+  if(m.method===undefined){if(m.id!=null&&waiting[m.id]){var w=waiting[m.id];delete waiting[m.id];m.error?w.no(m.error):w.ok(m.result);}return;}
+  // A request from the host: always answer (hosts check liveness with ping).
+  if(m.id!=null){
+    if(m.method==='ping'||m.method==='ui/resource-teardown')answer(m.id,{});
+    else answer(m.id,null,{code:-32601,message:'Method not found: '+m.method});
+    return;}
+  // Notifications.
+  if(m.method==='ui/notifications/tool-result'){if(ready)onToolResult(m.params);else queued=m.params;}
   else if(m.method==='ui/notifications/host-context-changed'&&m.params)theme(m.params.theme);
 });
 function theme(t){if(t==='dark'||t==='light')document.documentElement.dataset.theme=t;}
 if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)theme('dark');
-if(window.ResizeObserver)new ResizeObserver(function(){var r=document.documentElement.getBoundingClientRect();notify('ui/notifications/size-changed',{width:Math.ceil(r.width),height:Math.ceil(r.height)});}).observe(document.body);
+function size(){var r=document.documentElement.getBoundingClientRect();notify('ui/notifications/size-changed',{width:Math.ceil(r.width),height:Math.ceil(r.height)});}
 render();
-request('ui/initialize',{appInfo:{name:'life-hub-card',version:'1.0.0'},appCapabilities:{},protocolVersion:'2026-01-26'}).then(function(r){
-  theme(r&&r.hostContext&&r.hostContext.theme);notify('ui/notifications/initialized',{});
-},function(){});
+// Handshake exactly like the MCP Apps SDK: ui/initialize → ui/notifications/initialized, and only then
+// size updates and tool calls. Retry if the first request got lost while the host's sandbox was starting.
+var attempts=0;
+function connect(){
+  attempts++;var done=false;
+  request('ui/initialize',{appInfo:{name:'life-hub-card',version:'1.1.0'},appCapabilities:{availableDisplayModes:['inline']},protocolVersion:'2026-01-26'}).then(function(r){
+    if(ready)return;ready=done=true;
+    theme(r&&r.hostContext&&r.hostContext.theme);
+    post({jsonrpc:'2.0',method:'ui/notifications/initialized'});
+    size();if(window.ResizeObserver)new ResizeObserver(size).observe(document.body);
+    if(queued){var q=queued;queued=null;onToolResult(q);}
+  },function(){});
+  setTimeout(function(){if(!done&&!ready&&attempts<3)connect();},2000);
+}
+connect();
 })();
 `;
 

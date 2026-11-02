@@ -80,6 +80,10 @@ test('resources: the food card is a small self-contained mcp-app page with no ex
     // No remote code, styles, images or network calls.
     assert.doesNotMatch(content.text, /<script[^>]+src=|<link[^>]+href=|<img|url\(|@import|fetch\(|XMLHttpRequest|WebSocket|EventSource/);
     assert.match(content.text, /ui\/initialize/);
+    // The card answers host requests (liveness ping) and talks only after the handshake, like the SDK's App.
+    assert.match(content.text, /m\.method==='ping'/);
+    assert.match(content.text, /-32601/);
+    assert.ok(content.text.indexOf("method:'ui/notifications/initialized'") < content.text.indexOf('size();if(window.ResizeObserver)'));
     assert.equal((await rpc(db, 'resources/list', {}, { source: 'codex' })).error.code, -32601);
   } finally { db.close(); }
 });
