@@ -9,6 +9,7 @@
  */
 import { TOOLS, callTool } from './tools.js';
 import { READING_PREVIEW_URI, READING_PREVIEW_HTML } from './reading-widget.js';
+import { CARD_PREVIEW_URI, CARD_PREVIEW_HTML } from './cards/widget.js';
 
 export const MODERN_VERSIONS = Object.freeze(['2026-07-28']);
 export const LEGACY_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26']);
@@ -88,36 +89,41 @@ export async function handleMcpRequest(request, context) {
     result: { ...result, resultType: 'complete', _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_INFO } },
   });
   const notFound = () => rpcError(era === 'modern' ? 404 : 200, id, -32601, `Method not found: ${method}`);
-  const isChatgpt = context.source === 'chatgpt';
+  const hasCards = context.source === 'chatgpt' || context.source === 'claude';
 
   switch (method) {
     case 'initialize': {
       const requested = params.protocolVersion;
       const protocolVersion = LEGACY_VERSIONS.includes(requested) ? requested : LEGACY_VERSIONS[0];
-      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(isChatgpt ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
+      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(hasCards ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'server/discover':
       if (era !== 'modern') return notFound();
-      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(isChatgpt ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
+      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(hasCards ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
     case 'ping':
       if (era !== 'legacy') return notFound();
       return ok({});
     case 'tools/list':
-      // Preserve the Claude/Codex tool list exactly. The preview card is a ChatGPT-only enhancement.
-      return ok({ tools: isChatgpt ? TOOLS : TOOLS.filter((t) => t.name !== 'preview_reading_record'),
+      // Older and non-UI clients retain their proposal tools; Claude and ChatGPT get previews.
+      return ok({ tools: hasCards ? TOOLS : TOOLS.filter((t) => !t.name.startsWith('preview_')),
         ttlMs: 3600000, cacheScope: 'private' });
     case 'resources/list':
-      if (!isChatgpt) return notFound();
-      return ok({ resources: [{
-        uri: READING_PREVIEW_URI, name: 'reading-preview', title: 'Reading record preview',
-        mimeType: 'text/html;profile=mcp-app',
-      }] });
-    case 'resources/read':
-      if (!isChatgpt) return notFound();
-      if (params.uri !== READING_PREVIEW_URI) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
-      return ok({ contents: [{
-        uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML,
-      }] });
+      if (!hasCards) return notFound();
+      return ok({ resources: [
+        { uri: CARD_PREVIEW_URI, name: 'life-hub-proposal-card', title: 'Life Hub proposal preview',
+          mimeType: 'text/html;profile=mcp-app' },
+        { uri: READING_PREVIEW_URI, name: 'legacy-reading-preview', title: 'Reading preview',
+          mimeType: 'text/html;profile=mcp-app' },
+      ] });
+    case 'resources/read': {
+      if (!hasCards) return notFound();
+      const ui = params.uri === CARD_PREVIEW_URI ? CARD_PREVIEW_HTML :
+        params.uri === READING_PREVIEW_URI ? READING_PREVIEW_HTML : null;
+      if (!ui) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
+      // No network/CDN/iframe permissions; the sandbox uses local HTML, CSS and JS only.
+      return ok({ contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app',
+        text: ui, _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] });
+    }
     case 'tools/call': {
       if (typeof params.name !== 'string') return rpcError(era === 'modern' ? 400 : 200, id, -32602, 'Tool name required');
       const result = await callTool(params.name, params.arguments ?? {}, context);
