@@ -21,6 +21,15 @@ AniMan tracks, per series, which anime episodes and manga volumes the user finis
 3. Approving marks them through `src/lib/progress` (`markCompleted`, never removes); the receipt carries the series ID.
 4. Rejecting changes nothing.
 
+## Card and auto-apply (cards stage 6)
+
+The AniMan card shows the series (accent colour), what would be marked ("2기 5화까지", "3·5권") and the note; 「수정」
+edits the title (with the catalogue's titles as suggestions), kind, `up_to` or `numbers`, season and note. The app
+shares its catalogue titles (`PUT /animan/v1/refs/series`, `{id, label: title, group: accent colour}`; titles only).
+`card_approve` keeps a last check in the app unless the title means exactly one series (`seriesMatches`, like the
+app's `findSeries`). The app marks an approved update without asking only when the series is exact and every number
+exists there; otherwise it waits on the landing page. Setting 「Claude에서 승인된 항목 자동 반영」 (default on).
+
 ## Setup
 
 Repository variable `HUB_ANIMAN_REDIRECT_URI` = `https://<user>.github.io/AniMan/lifehub/`; deploy. No migration, no reconnect.

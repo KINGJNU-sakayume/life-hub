@@ -81,8 +81,8 @@ no KV/R2. Card HTML is served from the Worker bundle.
 | 2 (done) | PALATE + 켜켜이: cards for meal/wish/memory/visit (시군구 from refs), app auto-apply with setting; `card.approve` on for both. |
 | 3 (done) | Diaryroulette: new destination, daily mission (KST date → mission id, drawn by Life Hub from the app's shared list, checked again by the app), roulette card with 「일기 쓰기」; diary text never leaves the app (`P3_DIARYROULETTE.md`). |
 | 4 (done) | 업적 라이브러리: record card + `achievement_definition` (count/total/streak/tag/tag_count), category picker from the owner's tree (`P3_ACHIEVEMENT.md`). Shared picker (`cards/picker.js`) also used by 켜켜이. |
-| 5 (this) | 역 도장깨기: draw card (from the shared pool) + visit card (stamp), per-kind refs limits (`P3_SUB.md`); R2 photo hand-off stays a separate step. |
-| 6 | 책장 (after letterbookxd #14) + AniMan. |
+| 5 (done) | 역 도장깨기: draw card (from the shared pool) + visit card (stamp), per-kind refs limits (`P3_SUB.md`); R2 photo hand-off stays a separate step. |
+| 6 | AniMan progress card (this; `P3_ANIMAN.md`). 책장 waits for letterbookxd #14. |
 | 7 | potcast: track-level card on the existing Spotify sync. |
 
 ## After deploying stage 1

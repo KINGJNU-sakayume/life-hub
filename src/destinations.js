@@ -68,7 +68,11 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'animan', app: 'AniMan', role: 'animan', path: '/animan', scope: 'animan:inbox',
     redirectVar: 'HUB_ANIMAN_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
-    grants: 'Life Hub 수신함의 <strong>애니·만화 진행 후보를 가져오고</strong>, AniMan에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+    // Progress card; the app marks `approved` progress since its stage-6 release.
+    card: { approve: true },
+    // The app's catalogue: series id, title and accent colour, for the card's title list.
+    refKinds: ['series'],
+    grants: 'Life Hub 수신함의 <strong>애니·만화 진행 후보를 가져오고</strong>, 작품 목록(제목)을 공유하고, AniMan에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'diaryroulette', app: '일기 룰렛', role: 'diaryroulette', path: '/diaryroulette', scope: 'diaryroulette:inbox',
