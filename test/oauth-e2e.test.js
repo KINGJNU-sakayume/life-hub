@@ -109,6 +109,8 @@ test('full connect: wrong password, then approve, exchange, call a tool, refresh
     const page = await openConsent(env, clientId, challenge);
     assert.equal(page.response.status, 200);
     assert.match(page.response.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+    // Browsers enforce form-action on the redirect after the POST: Claude's origin must be allowed.
+    assert.match(page.response.headers.get('Content-Security-Policy'), /form-action 'self' https:\/\/claude\.ai(;|$)/);
     assert.match(page.html, /claude\.ai/);
     assert.ok(page.handle && page.cookie);
 

@@ -61,14 +61,19 @@ export function safeReturnTo(value) {
   return value;
 }
 
-const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; " +
-  "frame-ancestors 'none'; form-action 'self' https://claude.ai";
+/**
+ * Browsers apply `form-action` to the redirect that follows a form POST, so the consent page must
+ * allow the origin of the client it sends the code to (claude.ai, PALATE's GitHub Pages, ...).
+ * Every other page allows only same-origin forms.
+ */
+const csp = (formOrigins = []) => "default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; base-uri 'none'; " +
+  "frame-ancestors 'none'; form-action " + ["'self'", ...formOrigins].join(' ');
 
-function page(status, title, body, extraHeaders) {
+function page(status, title, body, extraHeaders, formOrigins = []) {
   const headers = new Headers(extraHeaders);
   headers.set('Content-Type', 'text/html; charset=utf-8');
   headers.set('Cache-Control', 'no-store');
-  headers.set('Content-Security-Policy', CSP);
+  headers.set('Content-Security-Policy', csp(formOrigins));
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('X-Frame-Options', 'DENY');
   headers.set('Referrer-Policy', 'no-referrer');
@@ -114,7 +119,7 @@ ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권�
 <div class="row"><button type="submit" name="decision" value="deny">거절</button>
 <button class="primary" type="submit" name="decision" value="approve">허용</button></div>
 </form>`;
-  return page(200, `${details.clientName || 'App'} 연결`, body, headers);
+  return page(200, `${details.clientName || 'App'} 연결`, body, headers, [new URL(profile.redirectUri).origin]);
 }
 
 function notAllowed(env) {
