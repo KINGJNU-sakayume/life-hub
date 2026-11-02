@@ -11,6 +11,7 @@ import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
 import { toPotcastCandidate } from './adapters/potcast.js';
 import { toAchievementCandidate } from './adapters/achievement.js';
+import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
 
 export const DESTINATIONS = Object.freeze([
   {
@@ -32,6 +33,11 @@ export const DESTINATIONS = Object.freeze([
     id: 'achievement', app: '업적 라이브러리', role: 'achievement', path: '/achievement', scope: 'achievement:inbox',
     redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', types: ['activity_record'], adapter: toAchievementCandidate, label: 'achievement',
     grants: 'Life Hub 수신함의 <strong>활동 기록 후보를 가져오고</strong>, 업적 라이브러리에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'letterbookxd', app: '책장', role: 'letterbookxd', path: '/letterbookxd', scope: 'letterbookxd:inbox',
+    redirectVar: 'HUB_LETTERBOOKXD_REDIRECT_URI', types: ['reading_record'], adapter: toLetterbookxdCandidate, label: 'letterbookxd',
+    grants: 'Life Hub 수신함의 <strong>독서 기록 후보를 가져오고</strong>, 책장에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
 ]);
 

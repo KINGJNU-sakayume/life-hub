@@ -108,6 +108,23 @@ const activitySchema = {
     memo: { type: 'string', minLength: 1, maxLength: 500, description: 'Short note in the user\'s words. Do not paste the conversation.' },
   },
 };
+const readingSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'state'],
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 200, description: 'Book title as published in Korean when it has a Korean edition (e.g. "데미안", "죄와 벌"), without volume numbers.' },
+    author: { type: 'string', minLength: 1, maxLength: 100, description: 'Author as usually written in Korean (e.g. "헤르만 헤세"), when the user said it or the title alone is ambiguous.' },
+    publisher: { type: 'string', minLength: 1, maxLength: 100, description: 'Publisher / translation edition, only if the user said it (e.g. "민음사").' },
+    volume: { type: 'integer', minimum: 1, maximum: 200, description: 'Volume number for multi-volume books (상/중/하 → 1/2/3), only if the user said it.' },
+    state: { type: 'string', enum: ['reading', 'completed'], description: 'completed: the user finished it. reading: they are reading it (with current_page when they said where they are).' },
+    current_page: { type: 'integer', minimum: 1, maximum: 20000, description: 'Page reached, reading only.' },
+    rating: { type: 'integer', minimum: 1, maximum: 5, description: 'Stars 1–5, completed only, only if the user rated it or said clearly how much they liked it.' },
+    liked: { type: 'boolean', description: 'true only when the user calls it a book of their life (인생책), completed only.' },
+    date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Day it was finished, or of the reading update (YYYY-MM-DD). ' + DATE_RULE },
+    note: { type: 'string', minLength: 1, maxLength: 500, description: 'Short note in the user\'s words, shown to the owner while reviewing.' },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -156,6 +173,13 @@ export const TOOLS = Object.freeze([
     title: 'Propose an activity record for 업적 라이브러리',
     description: 'Propose ONE activity the user actually did, for their 업적 라이브러리 (a personal tracker that turns records — workouts, reading, study, saving, meditation, culture, chores, milestones — into achievements). Use only when the user says they did it, never for plans or wishes. One proposal per activity and day; several activities mean several proposals. It may accompany a proposal to another app for the same event (a concert: a 켜켜이 memory and a 공연 record; a book: a 독서 record). Fill category, the resolved date, value+unit when an amount was given, and tags for notable details. ' + pendingNote('업적 라이브러리') + ' Identical proposals are de-duplicated.',
     inputSchema: activitySchema,
+    annotations: WRITE,
+  },
+  {
+    name: 'propose_reading_record',
+    title: 'Propose a reading record for 책장',
+    description: 'Propose ONE book the user said they finished or are reading, for their 책장 reading log (it tracks per-volume reading state, pages, 1–5 stars and 인생책). Use only for books the user actually read or is reading, never for wishlists or recommendations. 책장 finds the book in its own catalogue; give the Korean edition title and author when you know them, and publisher/volume only if the user said them. A finished book may also deserve a 독서 record for 업적 라이브러리 if the user tracks that. ' + pendingNote('책장') + ' Identical proposals are de-duplicated.',
+    inputSchema: readingSchema,
     annotations: WRITE,
   },
   {
@@ -266,6 +290,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
     } else if (name === 'propose_activity_record') {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
+    } else if (name === 'propose_reading_record') {
+      outcome = await propose(context, 'letterbookxd', 'reading_record', pick(args, readingSchema));
     } else if (name === 'propose_memory') {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {

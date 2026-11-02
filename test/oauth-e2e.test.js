@@ -143,7 +143,7 @@ test('full connect: wrong password, then approve, exchange, call a tool, refresh
     assert.ok(exchanged.body.access_token && exchanged.body.refresh_token);
 
     const listed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
-    assert.equal(listed.result.tools.length, 7);
+    assert.equal(listed.result.tools.length, 8);
 
     const proposed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/call',
       params: { name: 'propose_food_meal', arguments: { menu_name: 'Synthetic soup', eaten_on: '2026-11-01' } } })).json();
