@@ -8,6 +8,13 @@
 import { DESTINATIONS, redirectUriFor } from '../destinations.js';
 
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
+/** ChatGPT uses this stable callback when OAuth issuer identification is supported. */
+export const CHATGPT_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
+/** Legacy/no-issuer client registrations may use a unique, bounded callback suffix. */
+export function isChatgptCallback(uri) {
+  return uri === CHATGPT_CALLBACK ||
+    (typeof uri === 'string' && /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{8,128}$/.test(uri));
+}
 
 /**
  * Codex CLI/IDE OAuth uses an RFC 8252 loopback callback. The port changes at each login;
@@ -26,7 +33,7 @@ export function isCodexCallback(value) {
   } catch { return false; }
 }
 
-export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexCallback(uri);
+export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexCallback(uri) || isChatgptCallback(uri);
 
 export const SCOPES = Object.freeze({
   /** One scope for every conversational proposal tool, so new destinations need no reconnect. */
@@ -64,6 +71,12 @@ export function clientProfiles(env) {
 /** The profile for an authorization request, or null if the request must be refused. */
 export function profileFor(env, authRequest) {
   const profile = clientProfiles(env).find((p) => p.redirectUri === authRequest.redirectUri) ??
+    (isChatgptCallback(authRequest.redirectUri) ? {
+      id: 'chatgpt', role: 'chatgpt', redirectUri: authRequest.redirectUri,
+      resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.HUB_PROPOSE],
+      allowMissingResource: true, title: 'ChatGPT',
+      grants: '독서·음식·추억·활동 등 개인 기록의 <strong>후보</strong>를 Life Hub에 제안할 수 있어요. 각 사이트에서 승인하기 전까지 실제 기록은 변경되지 않아요.',
+    } : null) ??
     (isCodexCallback(authRequest.redirectUri) ? {
       id: 'codex', role: 'codex', redirectUri: authRequest.redirectUri,
       resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.HUB_PROPOSE],

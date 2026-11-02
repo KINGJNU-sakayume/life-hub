@@ -1,5 +1,5 @@
 /**
- * MCP tools exposed to an authorized Claude or Codex connection.
+ * MCP tools exposed to an authorized Claude, Codex or ChatGPT connection.
  *
  * Every tool only PROPOSES a candidate into the private inbox (status: pending) or reads the status
  * of a candidate this connector proposed. Nothing here can approve, confirm, edit or delete records,
@@ -9,11 +9,12 @@ import { canonical } from '../core/candidates.js';
 import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js';
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
 import { destinationById, ADAPTER_ERROR } from '../destinations.js';
+import { READING_PREVIEW_URI } from './reading-widget.js';
 
 function sourceFor(context) {
   // This is injected by the authenticated MCP handler, never from tool arguments.
   const source = context.source ?? 'claude'; // Legacy direct unit-test contexts.
-  if (source !== 'claude' && source !== 'codex') throw new Error('Invalid MCP source');
+  if (!['claude', 'codex', 'chatgpt'].includes(source)) throw new Error('Invalid MCP source');
   return source;
 }
 const pendingNote = (app) => `Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in ${app}.`;
@@ -162,6 +163,14 @@ const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: tru
 
 /** Deterministic order, as MCP recommends for client-side caching. */
 export const TOOLS = Object.freeze([
+  {
+    name: 'preview_reading_record',
+    title: 'Review reading update before proposing',
+    description: 'PREVIEW ONLY, no data is saved. When a ChatGPT user reports reading progress or finishing a book, call this first to display an editable reading-record card for letterbookxd. They can correct title, state, pages and notes, then explicitly submit the PENDING proposal from the card. If no card displays, present the draft in text and ask for confirmation before calling propose_reading_record.',
+    inputSchema: readingSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    _meta: { ui: { resourceUri: READING_PREVIEW_URI } },
+  },
   {
     name: 'get_proposal_status',
     title: 'Check a proposal',
@@ -324,6 +333,18 @@ async function propose(context, destination, candidateType, payload) {
 /** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
 export async function callTool(name, args, context) {
   try {
+    if (name === 'preview_reading_record') {
+      // Preview never touches D1, and is only exposed to ChatGPT, not Claude/Codex.
+      if (sourceFor(context) !== 'chatgpt') return null;
+      const draft = pick(args, readingSchema);
+      if (draft.state === 'completed' && draft.current_page !== undefined ||
+          draft.state === 'reading' && (draft.rating !== undefined || draft.liked !== undefined))
+        throw new ToolInputError('Reading updates use current_page; completed books use rating/liked.');
+      return {
+        content: [{ type: 'text', text: 'Reading draft prepared for letterbookxd: ' + JSON.stringify(draft) + '. Nothing has been saved. Review and submit the card; when unavailable, ask the user to confirm before proposing.' }],
+        structuredContent: { draft, destination: 'letterbookxd', status: 'preview' },
+      };
+    }
     let outcome;
     if (name === 'propose_food_meal') {
       const p = pick(args, mealSchema);
