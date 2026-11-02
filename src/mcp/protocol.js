@@ -8,6 +8,7 @@
  * No sessions, no GET stream, no server-initiated requests. Authorization happens before this runs.
  */
 import { TOOLS, callTool } from './tools.js';
+import { READING_PREVIEW_URI, READING_PREVIEW_HTML } from './reading-widget.js';
 
 export const MODERN_VERSIONS = Object.freeze(['2026-07-28']);
 export const LEGACY_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-03-26']);
@@ -87,6 +88,7 @@ export async function handleMcpRequest(request, context) {
     result: { ...result, resultType: 'complete', _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_INFO } },
   });
   const notFound = () => rpcError(era === 'modern' ? 404 : 200, id, -32601, `Method not found: ${method}`);
+  const isChatgpt = context.source === 'chatgpt';
 
   switch (method) {
     case 'initialize': {
@@ -101,7 +103,19 @@ export async function handleMcpRequest(request, context) {
       if (era !== 'legacy') return notFound();
       return ok({});
     case 'tools/list':
-      return ok({ tools: TOOLS, ttlMs: 3600000, cacheScope: 'private' });
+      // Preserve the Claude/Codex tool list exactly. The preview card is a ChatGPT-only enhancement.
+      return ok({ tools: isChatgpt ? TOOLS : TOOLS.filter((t) => t.name !== 'preview_reading_record'),
+        ttlMs: 3600000, cacheScope: 'private' });
+    case 'resources/list':
+      return ok({ resources: isChatgpt ? [{
+        uri: READING_PREVIEW_URI, name: 'reading-preview', title: 'Reading record preview',
+        mimeType: 'text/html;profile=mcp-app',
+      }] : [] });
+    case 'resources/read':
+      if (!isChatgpt || params.uri !== READING_PREVIEW_URI) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
+      return ok({ contents: [{
+        uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML,
+      }] });
     case 'tools/call': {
       if (typeof params.name !== 'string') return rpcError(era === 'modern' ? 400 : 200, id, -32602, 'Tool name required');
       const result = await callTool(params.name, params.arguments ?? {}, context);
