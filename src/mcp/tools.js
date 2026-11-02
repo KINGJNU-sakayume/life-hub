@@ -136,6 +136,19 @@ const stationSchema = {
     note: { type: 'string', minLength: 1, maxLength: 300, description: 'Short note in the user\'s words.' },
   },
 };
+const mediaSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'kind'],
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 100, description: 'Series title as the user said it or its usual Korean title (e.g. "주술회전", "최애의 아이").' },
+    kind: { type: 'string', enum: ['episode', 'volume'], description: 'episode: anime episodes watched. volume: manga/book volumes read.' },
+    season: { type: 'integer', minimum: 1, maximum: 30, description: 'Episodes only: the season the user counted in ("2기 5화" → season 2, up_to 5). Omit when they counted from the start.' },
+    up_to: { type: 'integer', minimum: 1, maximum: 5000, description: 'The user finished everything up to and including this episode/volume ("12화까지 봤어"). Use this OR numbers.' },
+    numbers: { type: 'array', minItems: 1, maxItems: 50, uniqueItems: true, items: { type: 'integer', minimum: 1, maximum: 5000 }, description: 'Only these episodes/volumes ("3화랑 5화만 봤어"). Use this OR up_to.' },
+    note: { type: 'string', minLength: 1, maxLength: 300, description: 'Short note in the user\'s words.' },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -201,6 +214,13 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_media_progress',
+    title: 'Propose anime/manga progress for AniMan',
+    description: 'Propose ONE progress update the user stated for an anime they watch or a manga they read, for AniMan (it maps episodes and volumes onto the original chapters). Use only when the user says they watched/read it, never for plans. Give up_to for "N화/권까지" (earlier ones count as done) or numbers for specific ones; add season only when they counted within a season. AniMan matches the series in its own catalogue. ' + pendingNote('AniMan') + ' Identical proposals are de-duplicated.',
+    inputSchema: mediaSchema,
+    annotations: WRITE,
+  },
+  {
     name: 'propose_memory',
     title: 'Propose a memory for 켜켜이',
     description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Fill the form the way the user would: a short title, the memo, time_text and place_text in their words, plus your resolution of the date (year/month/day) and of the place (region_hint), and the artist/song when music is involved. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
@@ -244,6 +264,9 @@ function pick(args, schema) {
     } else if (type === 'array' && schema.properties[key].items?.type === 'object') {
       if (!Array.isArray(value) || value.length > (schema.properties[key].maxItems ?? 100)) throw new ToolInputError(`${key} must be a list of at most ${schema.properties[key].maxItems} items.`);
       out[key] = value.map((item) => pick(item, schema.properties[key].items));
+    } else if (type === 'array' && schema.properties[key].items?.type === 'integer') {
+      if (!Array.isArray(value) || value.some((v) => !Number.isInteger(v))) throw new ToolInputError(`${key} must be a list of integers.`);
+      if (value.length) out[key] = [...value];
     } else if (type === 'array') {
       if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) throw new ToolInputError(`${key} must be a list of strings.`);
       if (value.length) out[key] = value.map((v) => v.trim());
@@ -312,6 +335,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'letterbookxd', 'reading_record', pick(args, readingSchema));
     } else if (name === 'propose_station_visit') {
       outcome = await propose(context, 'sub', 'station_visit', pick(args, stationSchema));
+    } else if (name === 'propose_media_progress') {
+      outcome = await propose(context, 'animan', 'media_progress', pick(args, mediaSchema));
     } else if (name === 'propose_memory') {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {

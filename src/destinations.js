@@ -13,6 +13,7 @@ import { toPotcastCandidate } from './adapters/potcast.js';
 import { toAchievementCandidate } from './adapters/achievement.js';
 import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
 import { toSubCandidate } from './adapters/sub.js';
+import { toAnimanCandidate } from './adapters/animan.js';
 
 export const DESTINATIONS = Object.freeze([
   {
@@ -44,6 +45,11 @@ export const DESTINATIONS = Object.freeze([
     id: 'sub', app: '역 도장깨기', role: 'sub', path: '/sub', scope: 'sub:inbox',
     redirectVar: 'HUB_SUB_REDIRECT_URI', types: ['station_visit'], adapter: toSubCandidate, label: 'sub',
     grants: 'Life Hub 수신함의 <strong>역 방문 후보를 가져오고</strong>, 역 도장깨기에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'animan', app: 'AniMan', role: 'animan', path: '/animan', scope: 'animan:inbox',
+    redirectVar: 'HUB_ANIMAN_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
+    grants: 'Life Hub 수신함의 <strong>애니·만화 진행 후보를 가져오고</strong>, AniMan에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
 ]);
 

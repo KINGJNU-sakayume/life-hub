@@ -64,6 +64,7 @@ jobs:
           HUB_ACHIEVEMENT_REDIRECT_URI: ${{ vars.HUB_ACHIEVEMENT_REDIRECT_URI }}
           HUB_LETTERBOOKXD_REDIRECT_URI: ${{ vars.HUB_LETTERBOOKXD_REDIRECT_URI }}
           HUB_SUB_REDIRECT_URI: ${{ vars.HUB_SUB_REDIRECT_URI }}
+          HUB_ANIMAN_REDIRECT_URI: ${{ vars.HUB_ANIMAN_REDIRECT_URI }}
         run: node scripts/render-wrangler-config.mjs wrangler.example.jsonc wrangler.jsonc
 
       - name: Apply D1 migrations (remote)
