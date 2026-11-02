@@ -1,5 +1,5 @@
 /**
- * MCP tools exposed to an authorized Claude or Codex connection.
+ * MCP tools exposed to an authorized Claude, Codex or ChatGPT connection.
  *
  * Every tool only PROPOSES a candidate into the private inbox (status: pending) or reads the status
  * of a candidate this connector proposed. Nothing here can approve, confirm, edit or delete records,
@@ -13,7 +13,7 @@ import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 function sourceFor(context) {
   // This is injected by the authenticated MCP handler, never from tool arguments.
   const source = context.source ?? 'claude'; // Legacy direct unit-test contexts.
-  if (source !== 'claude' && source !== 'codex') throw new Error('Invalid MCP source');
+  if (!['claude', 'codex', 'chatgpt'].includes(source)) throw new Error('Invalid MCP source');
   return source;
 }
 const pendingNote = (app) => `Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in ${app}.`;
