@@ -32,7 +32,8 @@ test('legacy handshake, notification and tool listing', async () => {
     assert.equal(init.status, 200);
     assert.equal(init.body.result.protocolVersion, '2025-06-18');
     // Claude connections advertise resources for the Life Hub cards.
-    assert.deepEqual(init.body.result.capabilities, { tools: { listChanged: false }, resources: { listChanged: false } });
+    assert.deepEqual(init.body.result.capabilities, { tools: { listChanged: false }, resources: { listChanged: false },
+      extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] } } });
     // Unknown requested version negotiates down to the newest legacy one.
     const odd = await send(db, post({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2099-01-01' } }));
     assert.equal(odd.body.result.protocolVersion, '2025-11-25');

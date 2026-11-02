@@ -300,7 +300,8 @@ export function toolsFor(context) {
   if (source !== 'claude') return tools;
   tools = tools.map((t) => {
     const card = cardFor(PROPOSE_DESTINATION[t.name]);
-    return card ? { ...t, _meta: { ui: { resourceUri: card.uri } } } : t;
+    // `ui/resourceUri` is the older flat key some hosts still read; `ui.resourceUri` is the current one.
+    return card ? { ...t, _meta: { ui: { resourceUri: card.uri }, 'ui/resourceUri': card.uri } } : t;
   });
   return canUseCards(context) ? [...tools, ...CARD_TOOLS] : tools;
 }
