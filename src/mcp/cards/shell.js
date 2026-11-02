@@ -108,15 +108,14 @@ function footer(){var c=S.card,a=esc(c.app),dis=S.busy?' disabled':'';
   if(c.status==='rejected')return fl(a+'에 저장되지 않아요.');
   if(S.error==='expired'||!S.ticket||c.approve==='scope')return fl('지금은 '+appLink(a+'에서 검토')+'할 수 있어요.');
   if(S.error==='conflict')return '<div class="foot">'+GROW+bt('btn','refresh','새로 고침')+'</div>';
-  var edit=B.noEdit?'':bt('btn','edit','수정',dis);
-  var right=c.approve==='ok'?edit+bt('btn pri','approve',S.busy?'처리 중…':(B.approveLabel||'승인'),dis):edit;
+  var opt=function(v){return typeof v==='function'?v(c):v;},edit=opt(B.noEdit)?'':bt('btn','edit','수정',dis);
+  var right=c.approve==='ok'?edit+bt('btn pri','approve',S.busy?'처리 중…':(opt(B.approveLabel)||'승인'),dis):edit;
   return (c.approve==='ok'?'':'<p class="line">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot">'+bt('link','ask','거절',dis)+GROW+right+'</div>';}
+function co(cls,t,r){return '<p class="callout c-'+cls+'" role="'+r+'">'+t+'</p>';}
 function callout(){var c=S.card;
-  if(S.error==='expired')return '<p class="callout c-err" role="alert">이 카드는 만료됐어요.</p>';
-  if(S.error==='conflict')return '<p class="callout c-err" role="alert">다른 곳에서 먼저 바뀌었어요. 최신 내용을 불러와 다시 확인해 주세요.</p>';
-  if(S.error)return '<p class="callout c-err" role="alert">'+esc(S.error)+'</p>';
-  if(S.mode==='pre')return '<p class="callout c-info" role="status">'+esc(S.pre.message)+'</p>';
-  if(c.status==='pending'&&c.approve==='scope')return '<p class="callout c-info">여기서 승인하려면 Claude 설정에서 Life Hub를 다시 연결하고 「카드에서 승인도 허용」을 켜 주세요.</p>';
+  if(S.error)return co('err',S.error==='expired'?'이 카드는 만료됐어요.':S.error==='conflict'?'다른 곳에서 먼저 바뀌었어요. 새로 고친 뒤 다시 확인해 주세요.':esc(S.error),'alert');
+  if(S.mode==='pre')return co('info',esc(S.pre.message),'status');
+  if(c.status==='pending'&&c.approve==='scope')return co('info','여기서 승인하려면 Life Hub를 다시 연결하고 「카드에서 승인도 허용」을 켜 주세요.','note');
   return '';}
 function render(){
   if(!S.card){root.innerHTML='<div class="card" aria-busy="true"><p class="meta">카드를 불러오는 중…</p></div>';return;}

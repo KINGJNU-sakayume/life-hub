@@ -56,8 +56,14 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'sub', app: '역 도장깨기', role: 'sub', path: '/sub', scope: 'sub:inbox',
-    redirectVar: 'HUB_SUB_REDIRECT_URI', types: ['station_visit'], adapter: toSubCandidate, label: 'sub',
-    grants: 'Life Hub 수신함의 <strong>역 방문 후보를 가져오고</strong>, 역 도장깨기에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+    redirectVar: 'HUB_SUB_REDIRECT_URI', types: ['station_visit', 'station_draw'], adapter: toSubCandidate, label: 'sub',
+    // Station card (draw + stamp); the app saves `approved` items since its stage-5 release.
+    card: { approve: true },
+    // lines (name, colour), stations (the public line-station list) and pool (what can be drawn now, which
+    // reflects "unvisited only"). The card gets lines and stations, never the pool.
+    refKinds: ['lines', 'stations', 'pool'], cardRefKinds: ['lines', 'stations'],
+    refLimits: { stations: { items: 800, bytes: 49152 }, pool: { items: 800, bytes: 49152 } },
+    grants: 'Life Hub 수신함의 <strong>역 방문·역 뽑기 후보를 가져오고</strong>, 노선·역 목록과 지금 뽑을 수 있는 역(아직 안 간 역 설정 반영)을 공유하고, 역 도장깨기에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'animan', app: 'AniMan', role: 'animan', path: '/animan', scope: 'animan:inbox',
