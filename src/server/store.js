@@ -8,6 +8,7 @@ function record(row) {
   return {
     id: row.id, destination: row.destination, source: row.source,
     status: row.status, received_at: row.received_at, reviewed_at: row.reviewed_at,
+    confirmed_entity_id: row.confirmed_entity_id ?? null,
     candidate: JSON.parse(row.envelope_json),
   };
 }
@@ -64,4 +65,35 @@ export async function getCandidate(db, ownerId, id, source) {
     await db.prepare('SELECT * FROM inbox WHERE owner_id=? AND id=? AND source=?').bind(ownerId, id, source).first() :
     await db.prepare('SELECT * FROM inbox WHERE owner_id=? AND id=?').bind(ownerId, id).first();
   return row ? record(row) : null;
+}
+
+/** Look up by the destination-visible key (source + idempotency key), owner-scoped. */
+async function rowByKey(db, ownerId, destination, source, key) {
+  return db.prepare('SELECT * FROM inbox WHERE owner_id=? AND destination=? AND source=? AND idempotency_key=?')
+    .bind(ownerId, destination, source, key).first();
+}
+
+/**
+ * Record the destination's receipt: the owner approved this candidate there and it was saved as
+ * `entityId`. Idempotent for the same entity; any other transition is a conflict.
+ */
+export async function confirmCandidateByKey(db, ownerId, destination, source, key, entityType, entityId, at) {
+  const before = await rowByKey(db, ownerId, destination, source, key);
+  if (!before) throw new StoreFailure(404, 'Candidate not found');
+  if (JSON.parse(before.envelope_json).candidate_type !== entityType)
+    throw new StoreFailure(409, 'Receipt type does not match the candidate');
+  await db.prepare(`UPDATE inbox SET status='confirmed',confirmed_entity_id=?,reviewed_at=?
+    WHERE id=? AND owner_id=? AND status='pending'`).bind(entityId, at, before.id, ownerId).run();
+  const row = await rowByKey(db, ownerId, destination, source, key);
+  if (row.status === 'rejected') throw new StoreFailure(409, 'Candidate was rejected');
+  if (row.status !== 'confirmed' || row.confirmed_entity_id !== entityId)
+    throw new StoreFailure(409, 'Candidate is confirmed as a different record');
+  return record(row);
+}
+
+/** Owner rejected the candidate at the destination. Idempotent; a confirmed candidate cannot be rejected. */
+export async function rejectCandidateByKey(db, ownerId, destination, source, key, at) {
+  const before = await rowByKey(db, ownerId, destination, source, key);
+  if (!before) throw new StoreFailure(404, 'Candidate not found');
+  return rejectCandidate(db, ownerId, before.id, at);
 }

@@ -1,15 +1,13 @@
 /**
  * P2 owner sign-in for the OAuth authorization endpoint.
  *
- * Life Hub has exactly one owner. Connecting Claude requires that owner to type a dedicated
- * password (HUB_OWNER_PASSWORD, a Worker secret) on this page. The OAuth library validates the
- * client, redirect URI and PKCE; this module adds the owner check, a throttle, a redirect
- * allowlist, and a consent page that never echoes unescaped client metadata.
+ * Life Hub has exactly one owner. Connecting a client (Claude, PALATE) requires that owner to type
+ * a dedicated password (HUB_OWNER_PASSWORD, a Worker secret) on this page. The OAuth library
+ * validates the client, redirect URI and PKCE; this module adds the owner check, a throttle, the
+ * client profile allowlist (src/auth/clients.js), and a consent page that never echoes unescaped
+ * client metadata.
  */
-
-export const GRANTED_SCOPES = Object.freeze(['food:propose']);
-/** Only the hosted Claude apps (web, desktop, mobile) may receive authorization codes. */
-export const ALLOWED_REDIRECT_URIS = Object.freeze(['https://claude.ai/api/mcp/auth_callback']);
+import { profileFor, clientProfiles } from './clients.js';
 export const PASSWORD_MIN_LENGTH = 20;
 export const MAX_ATTEMPTS_PER_WINDOW = 10;
 export const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
@@ -97,15 +95,15 @@ function messagePage(status, title, message, returnTo, headers) {
   return page(status, title, `<h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p>${retry}`, headers);
 }
 
-function consentPage(details, handle, returnTo, headers) {
+function consentPage(details, profile, handle, returnTo, headers) {
   const name = escapeHtml(details.clientName || '이름 없는 앱');
   const origin = details.clientDomain ?
     `<p class="muted">게시자: <strong>${escapeHtml(details.clientDomain)}</strong></p>` :
     '<p class="muted">스스로 등록한 앱이라 이름은 검증되지 않았어요.</p>';
   const body = `<h1>${name}에 Life Hub 연결</h1>
 ${origin}
-<p>허용하면 이 앱이 <strong>음식 기록 후보</strong>를 Life Hub 수신함에 제안할 수 있어요. 제안은 직접 승인하기 전까지 실제 기록이 되지 않아요.</p>
-<p class="muted">권한: <code>${GRANTED_SCOPES.map(escapeHtml).join(', ')}</code><br>
+<p>허용하면 이 앱이 ${profile.grants}</p>
+<p class="muted">권한: <code>${profile.scopes.map(escapeHtml).join(', ')}</code><br>
 인증 결과가 전달되는 곳: <strong>${escapeHtml(details.redirectHost)}</strong></p>
 ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권한이 전달돼요. 방금 직접 연결을 시작한 경우에만 계속하세요.</p>' : ''}
 <form method="post" action="/authorize">
@@ -119,6 +117,11 @@ ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권�
   return page(200, `${details.clientName || 'App'} 연결`, body, headers);
 }
 
+function notAllowed(env) {
+  const names = clientProfiles(env).map((p) => p.title).join(', ');
+  return messagePage(403, '허용되지 않은 앱', `이 Life Hub는 ${names} 연결만 허용해요.`);
+}
+
 /**
  * GET/POST /authorize. `oauth` is env.OAUTH_PROVIDER; `errors` carries the library's error classes
  * so this module stays importable without the Workers runtime.
@@ -130,12 +133,12 @@ export async function handleAuthorize(request, env, oauth, errors) {
   try {
     if (request.method === 'GET') {
       const authRequest = await oauth.parseAuthRequest(request);
-      if (!ALLOWED_REDIRECT_URIS.includes(authRequest.redirectUri))
-        return messagePage(403, '허용되지 않은 앱', '이 Life Hub는 Claude 앱 연결만 허용해요.');
+      const profile = profileFor(env, authRequest);
+      if (!profile) return notAllowed(env);
       const details = await oauth.describeConsent(authRequest);
       const consent = await oauth.beginConsent(authRequest);
       const url = new URL(request.url);
-      return consentPage(details, consent.handle, safeReturnTo(url.pathname + url.search) ?? '', consent.headers);
+      return consentPage(details, profile, consent.handle, safeReturnTo(url.pathname + url.search) ?? '', consent.headers);
     }
     if (request.method !== 'POST') return messagePage(405, '지원하지 않는 요청', 'GET 또는 POST만 사용할 수 있어요.', null, { Allow: 'GET, POST' });
 
@@ -158,16 +161,16 @@ export async function handleAuthorize(request, env, oauth, errors) {
     if (!check.ok)
       return messagePage(401, '비밀번호가 맞지 않아요', '비밀번호를 확인한 뒤 다시 시도해 주세요.', returnTo);
 
-    const approved = await oauth.approveConsent(request, handle, { scope: [...GRANTED_SCOPES] });
-    // Defence in depth: the stored request is what gets completed, so check it again.
-    if (!ALLOWED_REDIRECT_URIS.includes(approved.request.redirectUri))
-      return messagePage(403, '허용되지 않은 앱', '이 Life Hub는 Claude 앱 연결만 허용해요.');
+    // The stored request (not the form) decides the profile, its scopes and its resource.
+    const approved = await oauth.approveConsent(request, handle, { scope: [] });
+    const profile = profileFor(env, approved.request);
+    if (!profile) return notAllowed(env);
     const { redirectTo } = await oauth.completeAuthorization({
       request: approved.request,
       userId: env.HUB_OWNER_ID,
-      metadata: { connector: 'claude' },
-      scope: [...GRANTED_SCOPES],
-      props: { ownerId: env.HUB_OWNER_ID, role: 'claude' },
+      metadata: { connector: profile.id },
+      scope: [...profile.scopes],
+      props: { ownerId: env.HUB_OWNER_ID, role: profile.role },
     });
     approved.headers.set('Location', redirectTo);
     return new Response(null, { status: 302, headers: approved.headers });
@@ -175,10 +178,11 @@ export async function handleAuthorize(request, env, oauth, errors) {
     if (error instanceof AuthorizationError && error.redirectTo && request.method === 'GET') {
       // Only parseAuthRequest() attaches redirectTo, after validating the client and exact redirect URI.
       const target = new URL(error.redirectTo);
-      if (ALLOWED_REDIRECT_URIS.includes(target.origin + target.pathname)) return Response.redirect(error.redirectTo, 302);
+      if (clientProfiles(env).some((p) => p.redirectUri === target.origin + target.pathname))
+        return Response.redirect(error.redirectTo, 302);
     }
     if (error instanceof AuthorizationError || error instanceof CimdFetchError)
-      return messagePage(400, '연결을 완료할 수 없어요', '요청이 만료됐거나 올바르지 않아요. Claude에서 연결을 다시 시작해 주세요.');
+      return messagePage(400, '연결을 완료할 수 없어요', '요청이 만료됐거나 올바르지 않아요. 연결을 처음부터 다시 시작해 주세요.');
     throw error;
   }
 }
