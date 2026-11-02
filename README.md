@@ -17,6 +17,10 @@ Life Hub is a private-first routing project for personal websites; it is not a n
 
 No proposal becomes a record without the owner's approval in its destination app.
 
+## Card architecture (C0)
+
+The shared MCP Apps card design, approval-integrity requirements and staged cross-destination plan are specified in [docs/P4_CARDS.md](docs/P4_CARDS.md). `src/mcp/cards/definitions.js` is a **design-time contract only**; no app approval, automatic application or new write endpoint is enabled by C0.
+
 ## Test
 
 Requires Node.js 22+. One runtime dependency: `@cloudflare/workers-oauth-provider` (`npm install`).
