@@ -24,6 +24,8 @@
     "HUB_SUB_REDIRECT_URI": "REPLACE_WITH_YOUR_SUB_REDIRECT_URI",
     // Optional: AniMan's Life Hub callback page URL. Empty disables its inbox API.
     "HUB_ANIMAN_REDIRECT_URI": "REPLACE_WITH_YOUR_ANIMAN_REDIRECT_URI",
+    // Optional: 일기 룰렛 (Diaryroulette)'s Life Hub callback page URL. Empty disables its inbox API.
+    "HUB_DIARYROULETTE_REDIRECT_URI": "REPLACE_WITH_YOUR_DIARYROULETTE_REDIRECT_URI",
     // Optional: Spotify app client ID (public, 32 hex) for the hourly potcast collection. Empty disables it.
     // Also needs the HUB_SPOTIFY_TOKEN_KEY secret (Cloudflare dashboard) and the redirect URI <origin>/spotify/callback in the Spotify app.
     "HUB_SPOTIFY_CLIENT_ID": "REPLACE_WITH_YOUR_SPOTIFY_CLIENT_ID"

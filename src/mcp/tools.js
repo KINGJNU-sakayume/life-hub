@@ -11,11 +11,12 @@
  */
 import { canonical } from '../core/candidates.js';
 import {
-  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate, getDestinationRefs,
+  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate, getDestinationRefs, findCandidateByKey,
   editCardCandidate, approveCardCandidate, rejectCardCandidate,
 } from '../server/store.js';
 import { cardFor } from './cards/index.js';
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
+import { diaryDate, MISSION_ID } from '../adapters/diaryroulette.js';
 import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 import { READING_PREVIEW_URI } from './reading-widget.js';
 
@@ -256,6 +257,13 @@ export const TOOLS = Object.freeze([
     inputSchema: visitSchema,
     annotations: WRITE,
   },
+  {
+    name: 'propose_daily_mission',
+    title: 'Spin today\'s 일기 룰렛 mission',
+    description: 'Spin the user\'s 일기 룰렛 (diary roulette) for today\'s writing mission, when they ask for a diary mission, the roulette, or what to write today. Takes no input: Life Hub draws from the missions the app says are available today (the app keeps a 7-day cooldown and one mission per day; asking again the same day returns the same mission). Never pick, suggest or re-roll a mission yourself. If the app already drew today\'s mission, the result shows that one. The owner confirms with 「일기 쓰기」 in the card or in the app; the diary itself is written only in the app.',
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    annotations: WRITE,
+  },
 ]);
 
 /* ---------- Card-only tools (MCP Apps visibility ["app"]) ---------- */
@@ -287,7 +295,7 @@ const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
   propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement',
   propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_media_progress: 'animan',
-  propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi',
+  propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette',
 });
 /** Cards are a Claude feature for now; the card may approve only with an explicit hub:approve grant. */
 const isClaude = (context) => (context.source ?? 'claude') === 'claude';
@@ -310,7 +318,7 @@ export function toolsFor(context) {
  * What the card renders. Never contains the ticket. `refs` (the app's reference lists for pickers, e.g.
  * 켜켜이's 시군구) is passed only for card_* results, which the host gives to the card and not to the model.
  */
-function cardView(rec, context, refs) {
+function cardView(rec, context, refs, extra) {
   const destination = destinationById(rec.destination);
   const card = cardFor(rec.destination);
   return {
@@ -320,6 +328,7 @@ function cardView(rec, context, refs) {
     status: rec.status, revision: rec.revision, payload: finalEnvelope(rec).payload, needs_app_review: rec.needs_app_review,
     approve: !canUseCards(context) ? 'scope' : destination.card?.approve ? 'ok' : 'app',
     ...(refs ? { refs } : {}),
+    ...(extra ?? {}),
   };
 }
 
@@ -442,7 +451,9 @@ function pick(args, schema) {
 }
 
 async function idempotencyKey(destination, candidateType, payload, source) {
-  // Food keeps its original formula so earlier proposals still de-duplicate.
+  // Food keeps its original formula so earlier proposals still de-duplicate. A daily mission is one per diary
+  // day whatever was drawn, so asking again the same day returns the same mission (the app's own rule).
+  if (destination === 'diaryroulette') payload = { date: payload.date };
   const parts = destination === 'food' ? [source, candidateType, canonical(payload)] : [source, destination, candidateType, canonical(payload)];
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)));
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -450,7 +461,7 @@ async function idempotencyKey(destination, candidateType, payload, source) {
 
 const appName = (destination) => destinationById(destination)?.app ?? destination;
 
-async function propose(context, destination, candidateType, payload) {
+async function propose(context, destination, candidateType, payload, extra) {
   if (!acceptedScopes(destination).some((s) => (context.scopes ?? []).includes(s)))
     throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub MCP server in their client, then try again.`);
   const source = sourceFor(context);
@@ -477,13 +488,71 @@ async function propose(context, destination, candidateType, payload) {
     `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(appName(destination))}`;
   let meta;
   if (isClaude(context) && cardFor(destination)) {
-    structured.card = cardView(result, context);
+    structured.card = cardView(result, context, undefined, extra?.(result));
     // The ticket goes only to the card (result _meta), never into content or structuredContent.
     if (canUseCards(context) && result.status === 'pending')
       meta = { 'life-hub/card': { ticket: (await issueCardTicket(context.db, context.ownerId, result.id, context.now())).ticket } };
     text += ' The owner may review it in the Life Hub card; never approve or reject on their behalf.';
   }
   return { text, structured, meta };
+}
+
+/** Uniform random index without modulo bias. */
+function randomIndex(n) {
+  const limit = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  do crypto.getRandomValues(buf); while (buf[0] >= limit);
+  return buf[0] % n;
+}
+
+/**
+ * 일기 룰렛: Life Hub draws today's mission only from what the app shared (its mission list minus missions
+ * resting in its 7-day cooldown). A mission the app already drew today is shown as is; nothing is drawn then.
+ * The app re-checks everything before saving, so this never decides the day's mission on its own.
+ */
+async function proposeDailyMission(context) {
+  const destination = 'diaryroulette';
+  if (!acceptedScopes(destination).some((s) => (context.scopes ?? []).includes(s)))
+    throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub MCP server in their client, then try again.`);
+  const refs = await getDestinationRefs(context.db, context.ownerId, destination);
+  const missions = (refs.missions?.items ?? []).filter((m) => MISSION_ID.test(m.id));
+  if (!missions.length)
+    throw new ToolInputError(`${appName(destination)} has not shared its missions with Life Hub yet. Ask the user to connect 일기 룰렛 to Life Hub (in the app) and open it once, then try again.`);
+  const date = diaryDate(context.now());
+  const state = refs.state?.items ?? [];
+  const byId = new Map(missions.map((m) => [m.id, m]));
+  const today = state.find((s) => s.group === 'today:' + date && byId.has(s.id));
+  const describe = (m) => `"${m.label}"${m.group ? ` (${m.group})` : ''}`;
+  if (today) {
+    const mission = byId.get(today.id);
+    const structured = { status: 'drawn', date, mission_id: mission.id };
+    if (isClaude(context))
+      structured.card = {
+        v: 1, candidate_id: null, destination, app: appName(destination), app_url: context.appUrls?.[destination] ?? null,
+        type: 'daily_mission', label: '오늘의 미션', status: 'drawn', revision: 0, payload: { date, mission_id: mission.id },
+        needs_app_review: false, approve: 'app', mission,
+      };
+    return { text: `Today's 일기 룰렛 mission was already drawn in the app: ${describe(mission)}. Nothing new was drawn. The user writes it in the app.`, structured };
+  }
+  // Asked again the same day: keep the mission already drawn through Life Hub (no re-roll).
+  const key = await idempotencyKey(destination, 'daily_mission', { date }, sourceFor(context));
+  const earlier = await findCandidateByKey(context.db, context.ownerId, destination, sourceFor(context), key);
+  let missionId = earlier?.candidate?.payload?.mission_id;
+  if (!missionId) {
+    const resting = new Set(state.filter((s) => s.group === 'resting').map((s) => s.id));
+    const pool = missions.filter((m) => !resting.has(m.id));
+    const from = pool.length ? pool : missions;
+    missionId = from[randomIndex(from.length)].id;
+  }
+  const outcome = await propose(context, destination, 'daily_mission', { date, mission_id: missionId },
+    (rec) => ({ mission: byId.get(rec.candidate.payload.mission_id) ?? { id: missionId, label: missionId } }));
+  const mission = byId.get(missionId) ?? { id: missionId, label: missionId };
+  outcome.structured.mission_id = mission.id;
+  outcome.structured.date = date;
+  outcome.text = (outcome.structured.duplicate ? `Today's mission was already drawn through Life Hub: ${describe(mission)}. ` : `Life Hub drew today's 일기 룰렛 mission: ${describe(mission)}. `) +
+    (outcome.structured.status === 'pending' ? 'It becomes today\'s mission once the owner confirms (「일기 쓰기」 in the card, or in the app); the app checks its cooldown again. ' : `Its status is ${outcome.structured.status}. `) +
+    'Do not pick or re-roll a mission yourself.' + (outcome.text.includes('Life Hub card') ? ' The owner may confirm it in the Life Hub card; never confirm or reject on their behalf.' : '');
+  return outcome;
 }
 
 /** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
@@ -525,6 +594,9 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {
       outcome = await propose(context, 'kyeokyeoi', 'visit', pick(args, visitSchema));
+    } else if (name === 'propose_daily_mission') {
+      pick(args ?? {}, { required: [], properties: {} });
+      outcome = await proposeDailyMission(context);
     } else if (name === 'get_proposal_status' || name === 'get_food_candidate_status') {
       // The old name is still answered for clients that cached the previous tool list.
       const { candidate_id: id } = pick(args, statusSchema);

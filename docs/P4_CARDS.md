@@ -17,6 +17,7 @@ plain text until 「수정」 is opened, and a selected chip toggles off when ta
 | Tool → card | `propose_*` tools of a destination with a card get `_meta.ui.resourceUri` (Claude only) | Text `content` is unchanged, so text-only hosts work as before. |
 | Card data | result `structuredContent.card` | `{candidate_id, destination, app, app_url, type, label, status, revision, payload, needs_app_review, approve, refs?}`. `approve` is `ok`, `app` (the app does not accept card approval yet) or `scope` (grant without hub:approve). `refs` (e.g. 켜켜이's 시군구 list) is only in `card_*` results, which go to the card and not to the model; the first render's `card_refresh` brings it. |
 | Approval ticket | result `_meta["life-hub/card"].ticket` | 32 random bytes, base64url. Only its SHA-256 is stored (`card_tickets`, 7 days). Never in `content` or `structuredContent`. |
+| Body hooks | `src/mcp/cards/shell.js` | `view`/`edit`/`read`, optional `bind`, `preApprove`, `noEdit`, `approveLabel`, `foot`, `mount`, `afterApprove`, extra body CSS. |
 | Card actions | `card_refresh`, `card_edit`, `card_approve`, `card_reject` | `_meta.ui.visibility: ["app"]`, listed only for a Claude grant with `hub:approve`. |
 | Bridge | `ui/initialize` → `ui/notifications/initialized`, `ui/notifications/tool-result`, `tools/call`, `ui/open-link`, `ui/notifications/size-changed`, `host-context-changed` (theme) | Hand-written in `shell.js`. A card re-drawn from history calls `card_refresh` once to show the current state. |
 
@@ -78,7 +79,7 @@ no KV/R2. Card HTML is served from the Worker bundle.
 | --- | --- |
 | 1 (done) | Shared shell, food card, app-only tools, `hub:approve`, `approved` state (0008), inbox `open`/`approved`, refs API. Approval stays off for every destination. |
 | 2 (done) | PALATE + 켜켜이: cards for meal/wish/memory/visit (시군구 from refs), app auto-apply with setting; `card.approve` on for both. |
-| 3 | Diaryroulette: new destination, daily mission (KST date → mission id), roulette card; diary text never leaves the app. |
+| 3 (this) | Diaryroulette: new destination, daily mission (KST date → mission id, drawn by Life Hub from the app's shared list, checked again by the app), roulette card with 「일기 쓰기」; diary text never leaves the app (`P3_DIARYROULETTE.md`). |
 | 4 | 업적 라이브러리: record card + `achievement_definition` (count/total/streak/tag). |
 | 5 | 역 도장깨기: draw card + visit card (stamp); R2 photo hand-off as a separate step. |
 | 6 | 책장 (after letterbookxd #14) + AniMan. |
