@@ -19,6 +19,14 @@ test('renders the committed example with synthetic values', () => {
   assert.ok(out.includes('"binding": "OAUTH_KV"') && out.includes('global_fetch_strictly_public'));
 });
 
+test('PALATE redirect URI is optional but validated when present', () => {
+  assert.ok(renderWranglerConfig(example, good).includes('"HUB_PALATE_REDIRECT_URI": ""'));
+  const out = renderWranglerConfig(example, { ...good, HUB_PALATE_REDIRECT_URI: 'https://someone.github.io/food/' });
+  assert.ok(out.includes('"HUB_PALATE_REDIRECT_URI": "https://someone.github.io/food/"'));
+  for (const bad of ['http://someone.github.io/food/', 'https://someone.github.io/food/#/x', 'https://x.io/a?b=1', 'https://x.io/"}'])
+    assert.throws(() => renderWranglerConfig(example, { ...good, HUB_PALATE_REDIRECT_URI: bad }), /HUB_PALATE_REDIRECT_URI/, bad);
+});
+
 test('rejects missing, malformed or injected values', () => {
   const bad = [
     { D1_DATABASE_ID: undefined }, { D1_DATABASE_ID: 'life-hub-private' },

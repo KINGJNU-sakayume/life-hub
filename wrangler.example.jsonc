@@ -7,7 +7,9 @@
   "workers_dev": true,
   "vars": {
     // Exact public origin of this Worker, no trailing slash. The MCP connector URL is <origin>/mcp.
-    "HUB_PUBLIC_ORIGIN": "REPLACE_WITH_YOUR_PUBLIC_ORIGIN"
+    "HUB_PUBLIC_ORIGIN": "REPLACE_WITH_YOUR_PUBLIC_ORIGIN",
+    // Optional: PALATE's exact OAuth redirect URI (its app URL). Empty disables the PALATE inbox API.
+    "HUB_PALATE_REDIRECT_URI": "REPLACE_WITH_YOUR_PALATE_REDIRECT_URI"
   },
   "d1_databases": [
     {

@@ -20,7 +20,7 @@ No tool can approve, confirm, edit, delete or list other candidates. Identical p
 
 ## What does not work yet
 
-- **PALATE does not receive the candidates.** They wait in D1 (visible through the P1 owner API, `GET /v1/candidates`). Delivery to PALATE with a verified approval receipt is the next step.
+- PALATE receives the candidates through its own connection; see [P2B_PALATE.md](P2B_PALATE.md).
 - Only `destination: food`. Other sites follow one at a time (ROADMAP P3).
 - Claude Code (loopback redirect) is refused on purpose; only `https://claude.ai/api/mcp/auth_callback` may receive codes.
 

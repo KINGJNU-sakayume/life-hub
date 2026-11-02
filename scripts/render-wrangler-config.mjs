@@ -5,7 +5,7 @@
  * so nothing account-specific is ever committed to this public repository.
  *
  * Usage: D1_DATABASE_ID=<uuid> KV_NAMESPACE_ID=<32 hex> HUB_PUBLIC_ORIGIN=https://... \
- *        node scripts/render-wrangler-config.mjs [example] [output]
+ *        [HUB_PALATE_REDIRECT_URI=https://.../food/] node scripts/render-wrangler-config.mjs [example] [output]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -28,6 +28,12 @@ export const FIELDS = Object.freeze([
     normalize: (v) => v.trim().toLowerCase().replace(/\/+$/, ''),
     hint: 'the Worker origin such as https://life-hub-api.<subdomain>.workers.dev (no path)',
   },
+  {
+    env: 'HUB_PALATE_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_PALATE_REDIRECT_URI', optional: true,
+    valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or PALATE\'s https app URL such as https://<user>.github.io/food/ (no query or fragment)',
+  },
 ]);
 
 export function renderWranglerConfig(exampleText, values) {
@@ -35,7 +41,7 @@ export function renderWranglerConfig(exampleText, values) {
   for (const field of FIELDS) {
     const raw = values[field.env];
     const value = typeof raw === 'string' ? field.normalize(raw) : '';
-    if (!field.valid.test(value)) throw new Error(`${field.env} must be ${field.hint}`);
+    if (!(field.optional && value === '') && !field.valid.test(value)) throw new Error(`${field.env} must be ${field.hint}`);
     const occurrences = out.split(field.placeholder).length - 1;
     if (occurrences !== 1) throw new Error(`Expected exactly one ${field.placeholder} placeholder, found ${occurrences}`);
     out = out.replace(field.placeholder, value);
