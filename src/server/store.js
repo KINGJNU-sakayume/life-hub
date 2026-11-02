@@ -1,6 +1,6 @@
 /** D1 persistence. All queries are parameterized and owner-scoped. SQLite triggers append changes atomically. */
 import { candidateMeaning } from '../core/candidates.js';
-import { toFoodCandidate } from '../adapters/food.js';
+import { toDestinationCandidate } from '../adapters/index.js';
 export class StoreFailure extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -15,7 +15,7 @@ function record(row) {
 export async function insertCandidate(db, ownerId, candidate, at) {
   const meaning = candidateMeaning(candidate);
   // Validating the exact destination shape here prevents invalid records from entering persistent storage.
-  toFoodCandidate(candidate);
+  toDestinationCandidate(candidate);
   const id = crypto.randomUUID();
   const result = await db.prepare(`INSERT INTO inbox
     (id,owner_id,destination,source,idempotency_key,meaning,envelope_json,status,received_at)
@@ -96,4 +96,13 @@ export async function rejectCandidateByKey(db, ownerId, destination, source, key
   const before = await rowByKey(db, ownerId, destination, source, key);
   if (!before) throw new StoreFailure(404, 'Candidate not found');
   return rejectCandidate(db, ownerId, before.id, at);
+}
+
+/** One destination's candidates, newest first. */
+export async function listDestinationCandidates(db, ownerId, destination, status, limit) {
+  const query = status ?
+    'SELECT * FROM inbox WHERE owner_id=? AND destination=? AND status=? ORDER BY received_at DESC,id DESC LIMIT ?' :
+    'SELECT * FROM inbox WHERE owner_id=? AND destination=? ORDER BY received_at DESC,id DESC LIMIT ?';
+  const params = status ? [ownerId, destination, status, limit] : [ownerId, destination, limit];
+  return (await db.prepare(query).bind(...params).all()).results.map(record);
 }

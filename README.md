@@ -11,7 +11,8 @@ Life Hub is a private-first routing project for personal websites; it is not a n
 - **P0:** storage-independent validated candidate core, [PALATE](https://github.com/KINGJNU-sakayume/food) v1 adapter, and synthetic tests.
 - **P1 (deployed):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. Manual deploy workflow runnable entirely from the web ([docs/DEPLOY_FROM_WEB.md](docs/DEPLOY_FROM_WEB.md)).
 - **P2a (this stage):** Claude custom connector — OAuth 2.1 with owner password and an MCP endpoint whose tools *propose* food candidates into the private inbox ([docs/P2_CLAUDE_CONNECTOR.md](docs/P2_CLAUDE_CONNECTOR.md)).
-- **P2b (this stage):** PALATE pulls pending food candidates and reports approval receipts and rejections back, with the same owner sign-in ([docs/P2B_PALATE.md](docs/P2B_PALATE.md)).
+- **P2b (deployed):** PALATE pulls pending food candidates and reports approval receipts and rejections back, with the same owner sign-in ([docs/P2B_PALATE.md](docs/P2B_PALATE.md)).
+- **P3 (this stage):** 켜켜이 memories and region visits: Claude tools, a second destination app, migration 0004 ([docs/P3_KYEOKYEOI.md](docs/P3_KYEOKYEOI.md)).
 
 No proposal becomes a record without the owner's approval in PALATE.
 

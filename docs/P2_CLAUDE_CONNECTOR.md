@@ -14,7 +14,8 @@ Claude ──MCP over HTTPS──> <origin>/mcp ──> D1 inbox (status: pendin
 | --- | --- |
 | `propose_food_meal` | A meal the user says they actually ate → pending `meal` candidate |
 | `propose_food_wish` | A place to visit or dish to try → pending `wish` candidate |
-| `get_food_candidate_status` | Status of a candidate this connector proposed |
+| `get_proposal_status` | Status of any proposal this connector made (was `get_food_candidate_status`) |
+| `propose_memory`, `propose_region_visit` | 켜켜이 memories and visits; see [P3_KYEOKYEOI.md](P3_KYEOKYEOI.md) |
 
 No tool can approve, confirm, edit, delete or list other candidates. Identical proposals are de-duplicated: the idempotency key is a hash of the candidate type and normalized payload.
 

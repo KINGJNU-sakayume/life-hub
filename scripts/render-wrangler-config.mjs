@@ -34,6 +34,12 @@ export const FIELDS = Object.freeze([
     normalize: (v) => v.trim(),
     hint: 'empty, or PALATE\'s https app URL such as https://<user>.github.io/food/ (no query or fragment)',
   },
+  {
+    env: 'HUB_KYEOKYEOI_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_KYEOKYEOI_REDIRECT_URI', optional: true,
+    valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or 켜켜이\'s https app URL such as https://<user>.github.io/kyeokyeoi/ (no query or fragment)',
+  },
 ]);
 
 export function renderWranglerConfig(exampleText, values) {

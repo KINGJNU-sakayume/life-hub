@@ -5,7 +5,7 @@ import { handleMcpRequest } from '../src/mcp/protocol.js';
 import { insertCandidate } from '../src/server/store.js';
 
 const ORIGIN = 'https://hub.example';
-const context = (db) => ({ db, ownerId: 'demo-owner', now: () => Date.parse('2026-11-02T00:00:00Z'), allowedOrigins: [ORIGIN, 'https://claude.ai'] });
+const context = (db, scopes = ['food:propose', 'kyeokyeoi:propose']) => ({ db, ownerId: 'demo-owner', now: () => Date.parse('2026-11-02T00:00:00Z'), allowedOrigins: [ORIGIN, 'https://claude.ai'], scopes });
 
 function post(body, headers = {}) {
   return new Request(ORIGIN + '/mcp', {
@@ -42,7 +42,7 @@ test('legacy handshake, notification and tool listing', async () => {
 
     const list = await send(db, legacy('tools/list'));
     assert.deepEqual(list.body.result.tools.map((t) => t.name),
-      ['get_food_candidate_status', 'propose_food_meal', 'propose_food_wish']);
+      ['get_proposal_status', 'propose_food_meal', 'propose_food_wish', 'propose_memory', 'propose_region_visit']);
     assert.equal((await send(db, legacy('ping'))).body.result.resultType, 'complete');
   } finally { db.close(); }
 });
@@ -101,14 +101,14 @@ test('status tool only reveals candidates this connector proposed', async () => 
   try {
     const made = await send(db, legacy('tools/call', { name: 'propose_food_wish', arguments: { wish_kind: 'try_menu', name: 'Imaginary pasta' } }));
     const id = made.body.result.structuredContent.candidate_id;
-    const ok = await send(db, legacy('tools/call', { name: 'get_food_candidate_status', arguments: { candidate_id: id } }));
+    const ok = await send(db, legacy('tools/call', { name: 'get_proposal_status', arguments: { candidate_id: id } }));
     assert.equal(ok.body.result.structuredContent.status, 'pending');
 
     const manual = await insertCandidate(db, 'demo-owner', {
       hub_version: 1, destination: 'food', source: 'manual', source_ref: 'manual:t', idempotency_key: 'manual-key-0001',
       created_at: '2026-11-01T10:00:00Z', candidate_type: 'wish', payload: { wish_kind: 'try_menu', name: 'Private' },
     }, '2026-11-01T10:00:00Z');
-    const hidden = await send(db, legacy('tools/call', { name: 'get_food_candidate_status', arguments: { candidate_id: manual.id } }));
+    const hidden = await send(db, legacy('tools/call', { name: 'get_proposal_status', arguments: { candidate_id: manual.id } }));
     assert.equal(hidden.body.result.isError, true);
     assert.doesNotMatch(JSON.stringify(hidden.body), /Private/);
   } finally { db.close(); }

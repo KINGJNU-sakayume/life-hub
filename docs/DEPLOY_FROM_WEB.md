@@ -36,6 +36,7 @@ Settings → Secrets and variables → Actions.
 | --- | --- |
 | `HUB_PUBLIC_ORIGIN` | `https://life-hub-api.<your-subdomain>.workers.dev` — exactly, no trailing slash or path |
 | `HUB_PALATE_REDIRECT_URI` | optional (P2b): PALATE's app URL, e.g. `https://<user>.github.io/food/` |
+| `HUB_KYEOKYEOI_REDIRECT_URI` | optional (P3): 켜켜이's app URL, e.g. `https://<user>.github.io/kyeokyeoi/` |
 
 Optional: Settings → Environments → `production` → add yourself as a required reviewer so every deploy waits for a tap of approval.
 

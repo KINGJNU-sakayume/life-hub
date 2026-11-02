@@ -3,13 +3,15 @@
  *
  * Every tool only PROPOSES a candidate into the private inbox (status: pending) or reads the status
  * of a candidate this connector proposed. Nothing here can approve, confirm, edit or delete records,
- * and nothing writes to PALATE directly.
+ * and nothing writes to PALATE or 켜켜이 directly.
  */
 import { canonical } from '../core/candidates.js';
 import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js';
+import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
 
 const SOURCE = 'claude';
-const NOT_A_RECORD = 'Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in PALATE.';
+const pendingNote = (app) => `Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in ${app}.`;
+const NOT_A_RECORD = pendingNote('PALATE');
 
 const mealSchema = {
   type: 'object',
@@ -36,16 +38,44 @@ const wishSchema = {
   },
 };
 
+const memorySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title'],
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 80, description: 'Short title for the memory, in the user\'s words.' },
+    memo: { type: 'string', minLength: 1, maxLength: 2000, description: 'The memory as the user told it. Do not paste the whole conversation.' },
+    time_text: { type: 'string', minLength: 1, maxLength: 100, description: 'When it happened, exactly as the user said it (e.g. "고2 여름", "작년 크리스마스"). Do not convert ages or school years.' },
+    year: { type: 'integer', minimum: 1900, maximum: 2100, description: 'Only if the user stated the year.' },
+    month: { type: 'integer', minimum: 1, maximum: 12, description: 'Only if the user stated the month (requires year).' },
+    day: { type: 'integer', minimum: 1, maximum: 31, description: 'Only if the user stated the day (requires year and month).' },
+    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'Where it happened, as the user said it. The owner picks the exact region later.' },
+    emotions: { type: 'array', maxItems: 5, uniqueItems: true, items: { type: 'string', enum: [...KYEOKYEOI_EMOTIONS] }, description: 'Only feelings the user expressed, from this fixed list.' },
+  },
+};
+const visitSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['place_text'],
+  properties: {
+    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'The city/county/district the user said they visited, in their words.' },
+    visited_on: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Visit date (YYYY-MM-DD) only if the user stated it; never guess.' },
+    note: { type: 'string', minLength: 1, maxLength: 500, description: 'Optional short note in the user\'s words.' },
+  },
+};
+const statusSchema = {
+  type: 'object', additionalProperties: false, required: ['candidate_id'],
+  properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
+};
+const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
 /** Deterministic order, as MCP recommends for client-side caching. */
 export const TOOLS = Object.freeze([
   {
-    name: 'get_food_candidate_status',
-    title: 'Check a food proposal',
-    description: 'Look up the review status (pending, rejected, confirmed) of a food proposal previously made through this connector, by the candidate_id that propose_food_meal or propose_food_wish returned.',
-    inputSchema: {
-      type: 'object', additionalProperties: false, required: ['candidate_id'],
-      properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
-    },
+    name: 'get_proposal_status',
+    title: 'Check a proposal',
+    description: 'Look up the review status (pending, rejected, confirmed) of any proposal previously made through this connector (food, memory or visit), by the candidate_id a propose tool returned.',
+    inputSchema: statusSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
@@ -53,19 +83,35 @@ export const TOOLS = Object.freeze([
     title: 'Propose a meal for PALATE',
     description: 'Propose a meal the user has ACTUALLY eaten, for later review in their PALATE food log. Use only when the user explicitly says they ate it. Do NOT use for plans, wishes, hypotheticals, recipes, or meals they did not eat. Fill only fields the user stated. ' + NOT_A_RECORD + ' Identical proposals are de-duplicated.',
     inputSchema: mealSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: WRITE,
   },
   {
     name: 'propose_food_wish',
     title: 'Propose a food wish for PALATE',
     description: 'Propose a place the user wants to visit or a dish they want to try, for later review in their PALATE wishlist. Use only when the user says they want to go or try it. ' + NOT_A_RECORD + ' Identical proposals are de-duplicated.',
     inputSchema: wishSchema,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    annotations: WRITE,
+  },
+  {
+    name: 'propose_memory',
+    title: 'Propose a memory for 켜켜이',
+    description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Keep their own words: a short title, the memo, time_text exactly as said, place_text as said. Set year/month/day only if stated. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
+    inputSchema: memorySchema,
+    annotations: WRITE,
+  },
+  {
+    name: 'propose_region_visit',
+    title: 'Propose a region visit for 켜켜이',
+    description: 'Propose that the user has actually been to a region (city, county or district) for their 켜켜이 visit map. Use ONLY when the user explicitly says they went, visited, travelled to or stayed there. Never for plans or wishes, never because a place appears in a memory, and never inferred from where they live or work. ' + pendingNote('켜켜이') + ' The owner picks the exact region when approving.',
+    inputSchema: visitSchema,
+    annotations: WRITE,
   },
 ]);
 
+const DESTINATION_SCOPE = Object.freeze({ kyeokyeoi: 'kyeokyeoi:propose' });
 export class ToolInputError extends Error {}
 
+/** Strict argument parsing against a tool schema: unknown fields, wrong types and blanks are input errors. */
 function pick(args, schema) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ToolInputError('Arguments must be an object.');
   const allowed = Object.keys(schema.properties);
@@ -74,27 +120,42 @@ function pick(args, schema) {
   for (const key of schema.required) if (args[key] === undefined) throw new ToolInputError(`Missing required field: ${key}.`);
   const out = {};
   for (const key of allowed) {
-    if (args[key] === undefined) continue;
-    if (typeof args[key] !== 'string') throw new ToolInputError(`${key} must be a string.`);
-    const value = args[key].trim();
-    if (!value) throw new ToolInputError(`${key} must not be empty.`);
-    out[key] = value;
+    const value = args[key];
+    if (value === undefined) continue;
+    const type = schema.properties[key].type;
+    if (type === 'integer') {
+      if (!Number.isInteger(value)) throw new ToolInputError(`${key} must be an integer.`);
+      out[key] = value;
+    } else if (type === 'array') {
+      if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) throw new ToolInputError(`${key} must be a list of strings.`);
+      if (value.length) out[key] = value.map((v) => v.trim());
+    } else {
+      if (typeof value !== 'string') throw new ToolInputError(`${key} must be a string.`);
+      if (!value.trim()) throw new ToolInputError(`${key} must not be empty.`);
+      out[key] = value.trim();
+    }
   }
   return out;
 }
 
-async function idempotencyKey(candidateType, payload) {
-  const digest = await crypto.subtle.digest('SHA-256',
-    new TextEncoder().encode(JSON.stringify([SOURCE, candidateType, canonical(payload)])));
+async function idempotencyKey(destination, candidateType, payload) {
+  // Food keeps its original formula so earlier proposals still de-duplicate.
+  const parts = destination === 'food' ? [SOURCE, candidateType, canonical(payload)] : [SOURCE, destination, candidateType, canonical(payload)];
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)));
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function propose(context, candidateType, payload) {
+const APP = Object.freeze({ food: 'PALATE', kyeokyeoi: '켜켜이' });
+
+async function propose(context, destination, candidateType, payload) {
+  const scope = DESTINATION_SCOPE[destination];
+  if (scope && !(context.scopes ?? []).includes(scope))
+    throw new ToolInputError(`This Life Hub connection was authorized before ${APP[destination]} was added. Ask the user to reconnect the Life Hub connector in Claude's settings, then try again.`);
   const createdAt = new Date(context.now()).toISOString();
   const envelope = {
-    hub_version: 1, destination: 'food', source: SOURCE,
+    hub_version: 1, destination, source: SOURCE,
     source_ref: 'claude-mcp:' + createdAt.slice(0, 10),
-    idempotency_key: await idempotencyKey(candidateType, payload),
+    idempotency_key: await idempotencyKey(destination, candidateType, payload),
     created_at: createdAt, candidate_type: candidateType, payload,
   };
   let result;
@@ -103,18 +164,18 @@ async function propose(context, candidateType, payload) {
   } catch (error) {
     if (error instanceof StoreFailure) throw error;
     // Adapter validation failures carry no user data; report them as fixable input errors.
-    if (/Invalid (Life Hub|PALATE)|Unsupported PALATE/.test(String(error?.message)))
-      throw new ToolInputError('The proposal did not pass PALATE validation. Check field formats (dates as YYYY-MM-DD, https links).');
+    if (/Invalid (Life Hub|PALATE|kyeokyeoi)|Unsupported (PALATE|kyeokyeoi)/.test(String(error?.message)))
+      throw new ToolInputError(`The proposal did not pass ${APP[destination]} validation. Check field formats and limits (dates as YYYY-MM-DD, a month needs a year, a day needs a month, https links, emotions from the list).`);
     throw error;
   }
   const structured = { candidate_id: result.id, status: result.status, duplicate: result.duplicate };
   const text = result.duplicate ?
-    `An identical proposal is already in the inbox (candidate_id ${result.id}, status ${result.status}). Nothing new was added. If this is a different occasion, include the date (eaten_on) or a distinguishing note.` :
-    `Proposal saved for review (candidate_id ${result.id}, status pending). ${NOT_A_RECORD}`;
+    `An identical proposal is already in the inbox (candidate_id ${result.id}, status ${result.status}). Nothing new was added. If this is a different occasion, include a date or a distinguishing note.` :
+    `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(APP[destination])}`;
   return { text, structured };
 }
 
-/** Returns { content, structuredContent, isError? }. Throws only for server faults. */
+/** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
 export async function callTool(name, args, context) {
   try {
     let outcome;
@@ -123,16 +184,21 @@ export async function callTool(name, args, context) {
       const payload = { menu_name: p.menu_name };
       for (const key of ['place_name', 'verdict', 'reorder_intent', 'note']) if (p[key] !== undefined) payload[key] = p[key];
       if (p.eaten_on !== undefined) payload.eaten_at = p.eaten_on;
-      outcome = await propose(context, 'meal', payload);
+      outcome = await propose(context, 'food', 'meal', payload);
     } else if (name === 'propose_food_wish') {
-      outcome = await propose(context, 'wish', pick(args, wishSchema));
-    } else if (name === 'get_food_candidate_status') {
-      const { candidate_id: id } = pick(args, TOOLS[0].inputSchema);
+      outcome = await propose(context, 'food', 'wish', pick(args, wishSchema));
+    } else if (name === 'propose_memory') {
+      outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
+    } else if (name === 'propose_region_visit') {
+      outcome = await propose(context, 'kyeokyeoi', 'visit', pick(args, visitSchema));
+    } else if (name === 'get_proposal_status' || name === 'get_food_candidate_status') {
+      // The old name is still answered for clients that cached the previous tool list.
+      const { candidate_id: id } = pick(args, statusSchema);
       if (!/^[0-9a-f-]{36}$/.test(id)) throw new ToolInputError('candidate_id must be the id returned by a propose tool.');
       const found = await getCandidate(context.db, context.ownerId, id, SOURCE);
       if (!found) throw new ToolInputError('No proposal with that candidate_id was made through this connector.');
-      const structured = { candidate_id: found.id, status: found.status, received_at: found.received_at, reviewed_at: found.reviewed_at ?? null };
-      outcome = { text: `Candidate ${found.id} is ${found.status}.`, structured };
+      const structured = { candidate_id: found.id, destination: found.destination, status: found.status, received_at: found.received_at, reviewed_at: found.reviewed_at ?? null };
+      outcome = { text: `Candidate ${found.id} (${APP[found.destination] ?? found.destination}) is ${found.status}.`, structured };
     } else {
       return null;
     }

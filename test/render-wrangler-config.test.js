@@ -21,6 +21,10 @@ test('renders the committed example with synthetic values', () => {
 
 test('PALATE redirect URI is optional but validated when present', () => {
   assert.ok(renderWranglerConfig(example, good).includes('"HUB_PALATE_REDIRECT_URI": ""'));
+  assert.ok(renderWranglerConfig(example, good).includes('"HUB_KYEOKYEOI_REDIRECT_URI": ""'));
+  assert.ok(renderWranglerConfig(example, { ...good, HUB_KYEOKYEOI_REDIRECT_URI: 'https://someone.github.io/kyeokyeoi/' })
+    .includes('"HUB_KYEOKYEOI_REDIRECT_URI": "https://someone.github.io/kyeokyeoi/"'));
+  assert.throws(() => renderWranglerConfig(example, { ...good, HUB_KYEOKYEOI_REDIRECT_URI: 'http://x.io/' }), /HUB_KYEOKYEOI_REDIRECT_URI/);
   const out = renderWranglerConfig(example, { ...good, HUB_PALATE_REDIRECT_URI: 'https://someone.github.io/food/' });
   assert.ok(out.includes('"HUB_PALATE_REDIRECT_URI": "https://someone.github.io/food/"'));
   for (const bad of ['http://someone.github.io/food/', 'https://someone.github.io/food/#/x', 'https://x.io/a?b=1', 'https://x.io/"}'])

@@ -8,23 +8,28 @@
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
 
-export const SCOPES = Object.freeze({ PROPOSE: 'food:propose', INBOX: 'food:inbox' });
-export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate' });
+export const SCOPES = Object.freeze({
+  PROPOSE: 'food:propose', INBOX: 'food:inbox',
+  KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox',
+});
+export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi' });
 
-/** PALATE's redirect URI comes from deploy config; returns null when unset or malformed. */
-export function palateRedirectUri(env) {
-  const value = env.HUB_PALATE_REDIRECT_URI;
+/** A destination app's redirect URI comes from deploy config; null when unset or malformed. */
+function configuredRedirect(env, name) {
+  const value = env[name];
   return typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300 ? value : null;
 }
+export const palateRedirectUri = (env) => configuredRedirect(env, 'HUB_PALATE_REDIRECT_URI');
+export const kyeokyeoiRedirectUri = (env) => configuredRedirect(env, 'HUB_KYEOKYEOI_REDIRECT_URI');
 
 export function clientProfiles(env) {
   const profiles = [{
     id: 'claude', role: 'claude', redirectUri: CLAUDE_CALLBACK,
-    resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.PROPOSE],
+    resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.PROPOSE, SCOPES.KYEOKYEOI_PROPOSE],
     // Older MCP clients may omit `resource`; the authorization server defaults it to /mcp.
     allowMissingResource: true,
     title: 'Claude',
-    grants: '음식 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 직접 승인하기 전까지 실제 기록이 되지 않아요.',
+    grants: '음식 기록과 추억·방문 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
   }];
   const palate = palateRedirectUri(env);
   if (palate) profiles.push({
@@ -33,6 +38,14 @@ export function clientProfiles(env) {
     allowMissingResource: false,
     title: 'PALATE',
     grants: 'Life Hub 수신함의 <strong>음식 후보를 가져오고</strong>, PALATE에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  });
+  const kyeokyeoi = kyeokyeoiRedirectUri(env);
+  if (kyeokyeoi) profiles.push({
+    id: 'kyeokyeoi', role: 'kyeokyeoi', redirectUri: kyeokyeoi,
+    resourcePath: RESOURCE_PATHS.KYEOKYEOI, scopes: [SCOPES.KYEOKYEOI_INBOX],
+    allowMissingResource: false,
+    title: '켜켜이',
+    grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   });
   return profiles;
 }

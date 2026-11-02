@@ -1,20 +1,24 @@
 /**
- * PALATE inbox API (resource `<origin>/palate`, scope `food:inbox`).
+ * Destination inbox API, one instance per destination app (each its own OAuth resource):
+ *   PALATE    → prefix /palate/v1,    destination food,      scope food:inbox
+ *   켜켜이     → prefix /kyeokyeoi/v1, destination kyeokyeoi, scope kyeokyeoi:inbox
  *
- * PALATE is a browser app. After the owner signs in, it may:
- *   GET  /palate/v1/candidates?status=pending|all&limit=N   read food candidates (PALATE v1 shape)
- *   POST /palate/v1/receipts    { key, entity_type, entity_id }   owner approved & saved it in PALATE
- *   POST /palate/v1/rejections  { key }                          owner rejected it in PALATE
- * `key` is PALATE's candidate key: `<source>:<idempotency_key>`.
+ * After the owner signs in, the app may:
+ *   GET  <prefix>/candidates?status=pending|all&limit=N   read its candidates (in its own v1 shape)
+ *   POST <prefix>/receipts    { key, entity_type, entity_id }   owner approved & saved it in the app
+ *   POST <prefix>/rejections  { key }                          owner rejected it in the app
+ * `key` is `<source>:<idempotency_key>`.
  *
- * Every write is idempotent so PALATE can retry from its outbox. Nothing here creates candidates.
+ * Every write is idempotent so the app can retry from its outbox. Nothing here creates candidates.
  */
-import { toFoodCandidate } from '../adapters/food.js';
-import { listCandidates, confirmCandidateByKey, rejectCandidateByKey, StoreFailure } from '../server/store.js';
+import { toDestinationCandidate } from '../adapters/index.js';
+import { listDestinationCandidates, confirmCandidateByKey, rejectCandidateByKey, StoreFailure } from '../server/store.js';
 
 const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
+/** Candidate types each destination can confirm, i.e. the allowed receipt `entity_type`s. */
+const ENTITY_TYPES = Object.freeze({ food: ['meal', 'wish'], kyeokyeoi: ['memory', 'visit'] });
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const json = (status, value) => new Response(JSON.stringify(value), { status, headers: HEADERS });
 
@@ -48,35 +52,36 @@ function view(record) {
     received_at: record.received_at,
     reviewed_at: record.reviewed_at ?? null,
     confirmed_entity_id: record.confirmed_entity_id ?? null,
-    candidate: toFoodCandidate(record.candidate),
+    candidate: toDestinationCandidate(record.candidate),
   };
 }
 
-/** @param {{ db: any, ownerId: string, now: () => number }} context */
-export async function handlePalateRequest(request, context) {
+/** @param {{ db: any, ownerId: string, now: () => number, destination: 'food'|'kyeokyeoi', prefix: string }} context */
+export async function handleInboxRequest(request, context) {
   const url = new URL(request.url);
   const at = new Date(context.now()).toISOString();
+  const { destination, prefix } = context;
   try {
-    if (url.pathname === '/palate/v1/candidates' && request.method === 'GET') {
+    if (url.pathname === prefix + '/candidates' && request.method === 'GET') {
       const status = url.searchParams.get('status') ?? 'pending';
       if (!['pending', 'all'].includes(status)) throw new InputError('Invalid status');
       const limitText = url.searchParams.get('limit') ?? '50';
       if (!/^[1-9][0-9]{0,2}$/.test(limitText) || Number(limitText) > 100) throw new InputError('Invalid limit');
-      const records = await listCandidates(context.db, context.ownerId, status === 'all' ? null : 'pending', Number(limitText));
-      return json(200, { candidates: records.filter((r) => r.destination === 'food').map(view) });
+      const records = await listDestinationCandidates(context.db, context.ownerId, destination, status === 'all' ? null : 'pending', Number(limitText));
+      return json(200, { candidates: records.map(view) });
     }
-    if (url.pathname === '/palate/v1/receipts' && request.method === 'POST') {
+    if (url.pathname === prefix + '/receipts' && request.method === 'POST') {
       const body = await readJson(request, ['key', 'entity_type', 'entity_id']);
       const { source, idempotencyKey } = parseKey(body.key);
-      if (!['meal', 'wish'].includes(body.entity_type) || typeof body.entity_id !== 'string' || !ENTITY_ID.test(body.entity_id))
+      if (!ENTITY_TYPES[destination].includes(body.entity_type) || typeof body.entity_id !== 'string' || !ENTITY_ID.test(body.entity_id))
         throw new InputError('Invalid receipt');
-      const record = await confirmCandidateByKey(context.db, context.ownerId, 'food', source, idempotencyKey, body.entity_type, body.entity_id, at);
+      const record = await confirmCandidateByKey(context.db, context.ownerId, destination, source, idempotencyKey, body.entity_type, body.entity_id, at);
       return json(200, { candidate: view(record) });
     }
-    if (url.pathname === '/palate/v1/rejections' && request.method === 'POST') {
+    if (url.pathname === prefix + '/rejections' && request.method === 'POST') {
       const body = await readJson(request, ['key']);
       const { source, idempotencyKey } = parseKey(body.key);
-      const record = await rejectCandidateByKey(context.db, context.ownerId, 'food', source, idempotencyKey, at);
+      const record = await rejectCandidateByKey(context.db, context.ownerId, destination, source, idempotencyKey, at);
       return json(200, { candidate: view(record) });
     }
     return json(404, { error: 'Not found' });
