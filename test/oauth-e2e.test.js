@@ -203,9 +203,9 @@ test('Codex OAuth + PKCE submits independently attributed pending proposals and 
     const { verifier, challenge } = await pkce();
     const page = await openConsent(env, codexClient, challenge, 'codex-state', CODEX_CALLBACK);
     assert.equal(page.response.status, 200, page.html);
-    assert.match(page.html, /127\\.0\\.0\\.1/);
+    assert.match(page.html, /127\.0\.0\.1/);
     assert.match(page.html, /Codex/);
-    assert.match(page.response.headers.get('Content-Security-Policy'), /form-action 'self' http:\\/\\/127\\.0\\.0\\.1:53147/);
+    assert.match(page.response.headers.get('Content-Security-Policy'), /form-action 'self' http:\/\/127\.0\.0\.1:53147/);
     const approved = await submit(env, page, { decision: 'approve', password: PASSWORD });
     assert.equal(approved.status, 302);
     const redirected = new URL(approved.headers.get('Location'));
