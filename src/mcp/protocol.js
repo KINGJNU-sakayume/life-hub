@@ -7,7 +7,8 @@
  * - legacy (2025-03-26 .. 2025-11-25): `initialize` handshake, then plain requests.
  * No sessions, no GET stream, no server-initiated requests. Authorization happens before this runs.
  */
-import { TOOLS, callTool } from './tools.js';
+import { toolsFor, callTool } from './tools.js';
+import { CARD_RESOURCES, readCardResource } from './cards/index.js';
 import { READING_PREVIEW_URI, READING_PREVIEW_HTML } from './reading-widget.js';
 
 export const MODERN_VERSIONS = Object.freeze(['2026-07-28']);
@@ -17,7 +18,7 @@ const META_VERSION = 'io.modelcontextprotocol/protocolVersion';
 const SERVER_INFO = Object.freeze({ name: 'life-hub', title: 'Life Hub', version: '0.3.0' });
 const INSTRUCTIONS = 'Life Hub collects PENDING PROPOSALS for personal archives (food, memories, music, activities, books, stations and media). ' +
   'Propose only events the user explicitly reports as having happened, or wishes explicitly stated; never turn plans into completed events. ' +
-  'Each destination validates its own fields. No candidate becomes a real record until the owner approves it in the destination app. ' +
+  'Each destination validates its own fields. No candidate becomes a real record until the owner approves it, in the destination app or with the buttons of a Life Hub card; you never approve, edit or reject. ' +
   'Never claim the record was saved, only that a proposal was submitted for review.';
 const MAX_BODY = 64 * 1024;
 
@@ -83,41 +84,47 @@ export async function handleMcpRequest(request, context) {
 
   if (isNotification) return new Response(null, { status: 202, headers: { 'Cache-Control': 'no-store' } });
 
+  // A tool result may carry its own _meta (the card ticket); keep it next to serverInfo.
   const ok = (result) => json(200, {
     jsonrpc: '2.0', id,
-    result: { ...result, resultType: 'complete', _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_INFO } },
+    result: { ...result, resultType: 'complete', _meta: { ...(result._meta ?? {}), 'io.modelcontextprotocol/serverInfo': SERVER_INFO } },
   });
   const notFound = () => rpcError(era === 'modern' ? 404 : 200, id, -32601, `Method not found: ${method}`);
   const isChatgpt = context.source === 'chatgpt';
+  // UI resources: ChatGPT's reading preview, and the Claude cards. Codex gets neither.
+  const isClaude = (context.source ?? 'claude') === 'claude';
+  const hasResources = isChatgpt || isClaude;
 
   switch (method) {
     case 'initialize': {
       const requested = params.protocolVersion;
       const protocolVersion = LEGACY_VERSIONS.includes(requested) ? requested : LEGACY_VERSIONS[0];
-      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(isChatgpt ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
+      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(hasResources ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'server/discover':
       if (era !== 'modern') return notFound();
-      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(isChatgpt ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
+      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(hasResources ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
     case 'ping':
       if (era !== 'legacy') return notFound();
       return ok({});
     case 'tools/list':
-      // Preserve the Claude/Codex tool list exactly. The preview card is a ChatGPT-only enhancement.
-      return ok({ tools: isChatgpt ? TOOLS : TOOLS.filter((t) => t.name !== 'preview_reading_record'),
-        ttlMs: 3600000, cacheScope: 'private' });
+      // ChatGPT keeps its reading preview; Claude's propose tools point at cards (+ app-only card tools
+      // with hub:approve); Codex sees the plain proposal tools.
+      return ok({ tools: toolsFor(context), ttlMs: 3600000, cacheScope: 'private' });
     case 'resources/list':
-      if (!isChatgpt) return notFound();
-      return ok({ resources: [{
+      if (!hasResources) return notFound();
+      return ok({ resources: isChatgpt ? [{
         uri: READING_PREVIEW_URI, name: 'reading-preview', title: 'Reading record preview',
         mimeType: 'text/html;profile=mcp-app',
-      }] });
-    case 'resources/read':
-      if (!isChatgpt) return notFound();
-      if (params.uri !== READING_PREVIEW_URI) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
-      return ok({ contents: [{
-        uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML,
-      }] });
+      }] : CARD_RESOURCES });
+    case 'resources/read': {
+      if (!hasResources) return notFound();
+      const content = isChatgpt ?
+        (params.uri === READING_PREVIEW_URI ? { uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML } : null) :
+        readCardResource(params.uri);
+      if (!content) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
+      return ok({ contents: [content] });
+    }
     case 'tools/call': {
       if (typeof params.name !== 'string') return rpcError(era === 'modern' ? 400 : 200, id, -32602, 'Tool name required');
       const result = await callTool(params.name, params.arguments ?? {}, context);

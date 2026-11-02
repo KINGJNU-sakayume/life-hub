@@ -31,7 +31,8 @@ test('legacy handshake, notification and tool listing', async () => {
       params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } } }));
     assert.equal(init.status, 200);
     assert.equal(init.body.result.protocolVersion, '2025-06-18');
-    assert.deepEqual(init.body.result.capabilities, { tools: { listChanged: false } });
+    // Claude connections advertise resources for the Life Hub cards.
+    assert.deepEqual(init.body.result.capabilities, { tools: { listChanged: false }, resources: { listChanged: false } });
     // Unknown requested version negotiates down to the newest legacy one.
     const odd = await send(db, post({ jsonrpc: '2.0', id: 0, method: 'initialize', params: { protocolVersion: '2099-01-01' } }));
     assert.equal(odd.body.result.protocolVersion, '2025-11-25');
@@ -148,9 +149,12 @@ test('modern era: discover, header validation and version negotiation', async ()
     assert.equal(future.body.error.code, -32022);
     assert.equal(future.body.error.data.requested, '2099-01-01');
 
-    const missing = await send(db, modern('resources/list'));
+    const missing = await send(db, modern('resources/read', { uri: 'ui://life-hub/nope.html' }));
     assert.equal(missing.status, 404);
-    assert.equal(missing.body.error.code, -32601);
+    assert.equal(missing.body.error.code, -32002);
+    const unknownMethod = await send(db, modern('prompts/list'));
+    assert.equal(unknownMethod.status, 404);
+    assert.equal(unknownMethod.body.error.code, -32601);
     assert.equal((await send(db, modern('ping'))).status, 404);
   } finally { db.close(); }
 });

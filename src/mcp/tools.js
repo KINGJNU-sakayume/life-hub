@@ -1,12 +1,20 @@
 /**
  * MCP tools exposed to an authorized Claude, Codex or ChatGPT connection.
  *
- * Every tool only PROPOSES a candidate into the private inbox (status: pending) or reads the status
- * of a candidate this connector proposed. Nothing here can approve, confirm, edit or delete records,
- * and nothing writes to PALATE or 켜켜이 directly.
+ * Model-visible tools only PROPOSE a candidate into the private inbox (status: pending) or read the
+ * status of a candidate this connector proposed. Nothing writes to a destination app directly.
+ *
+ * The card_* tools are the one exception and are NOT for the model: MCP Apps app-only tools
+ * (`_meta.ui.visibility: ["app"]`), listed only for a Claude grant that carries hub:approve, and each call
+ * needs the single-use ticket the server put in the proposal result's `_meta` (which hosts hand to the
+ * card UI, not to the model). They let the owner edit, approve or reject from the Claude card.
  */
 import { canonical } from '../core/candidates.js';
-import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js';
+import {
+  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate,
+  editCardCandidate, approveCardCandidate, rejectCardCandidate,
+} from '../server/store.js';
+import { cardFor } from './cards/index.js';
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
 import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 import { READING_PREVIEW_URI } from './reading-widget.js';
@@ -250,6 +258,116 @@ export const TOOLS = Object.freeze([
   },
 ]);
 
+/* ---------- Card-only tools (MCP Apps visibility ["app"]) ---------- */
+const HUB_APPROVE = 'hub:approve';
+const APP_ONLY = Object.freeze({ ui: Object.freeze({ visibility: Object.freeze(['app']) }) });
+const cardRef = {
+  candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' },
+  ticket: { type: 'string', pattern: '^[A-Za-z0-9_-]{43}$' },
+};
+const revision = { type: 'integer', minimum: 0 };
+const CARD_NOTE = 'Card UI only; never call this yourself.';
+export const CARD_TOOLS = Object.freeze([
+  { name: 'card_refresh', title: 'Card: reload', description: CARD_NOTE,
+    inputSchema: { type: 'object', additionalProperties: false, required: ['candidate_id', 'ticket'], properties: { ...cardRef } },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: APP_ONLY },
+  { name: 'card_edit', title: 'Card: save the owner\'s edit', description: CARD_NOTE,
+    inputSchema: { type: 'object', additionalProperties: false, required: ['candidate_id', 'ticket', 'revision', 'payload'],
+      properties: { ...cardRef, revision, payload: { type: 'object' } } },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }, _meta: APP_ONLY },
+  { name: 'card_approve', title: 'Card: owner approves', description: CARD_NOTE,
+    inputSchema: { type: 'object', additionalProperties: false, required: ['candidate_id', 'ticket', 'revision'],
+      properties: { ...cardRef, revision, app_review: { type: 'boolean' } } },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }, _meta: APP_ONLY },
+  { name: 'card_reject', title: 'Card: owner rejects', description: CARD_NOTE,
+    inputSchema: { type: 'object', additionalProperties: false, required: ['candidate_id', 'ticket'], properties: { ...cardRef } },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }, _meta: APP_ONLY },
+]);
+const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
+const PROPOSE_DESTINATION = Object.freeze({
+  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement',
+  propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_media_progress: 'animan',
+  propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi',
+});
+/** Cards are a Claude feature for now; the card may approve only with an explicit hub:approve grant. */
+const isClaude = (context) => (context.source ?? 'claude') === 'claude';
+export const canUseCards = (context) => isClaude(context) && (context.scopes ?? []).includes(HUB_APPROVE);
+
+/** The tool list this connection sees. */
+export function toolsFor(context) {
+  const source = context.source ?? 'claude';
+  let tools = source === 'chatgpt' ? [...TOOLS] : TOOLS.filter((t) => t.name !== 'preview_reading_record');
+  if (source !== 'claude') return tools;
+  tools = tools.map((t) => {
+    const card = cardFor(PROPOSE_DESTINATION[t.name]);
+    return card ? { ...t, _meta: { ui: { resourceUri: card.uri } } } : t;
+  });
+  return canUseCards(context) ? [...tools, ...CARD_TOOLS] : tools;
+}
+
+/** What the card renders. Never contains the ticket. */
+function cardView(rec, context) {
+  const destination = destinationById(rec.destination);
+  const card = cardFor(rec.destination);
+  return {
+    v: 1, candidate_id: rec.id, destination: rec.destination, app: destination.app,
+    app_url: context.appUrls?.[rec.destination] ?? null,
+    type: rec.candidate.candidate_type, label: card.labels[rec.candidate.candidate_type] ?? destination.app,
+    status: rec.status, revision: rec.revision, payload: finalEnvelope(rec).payload, needs_app_review: rec.needs_app_review,
+    approve: !canUseCards(context) ? 'scope' : destination.card?.approve ? 'ok' : 'app',
+  };
+}
+
+function cardPayload(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || JSON.stringify(value).length > 8192 ||
+      Object.values(value).some((v) => typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean' && !Array.isArray(v)))
+    throw new ToolInputError('payload must be a small object of field values.');
+  return value;
+}
+
+async function callCardTool(name, args, context) {
+  if (!canUseCards(context)) return null;
+  const at = new Date(context.now()).toISOString();
+  const schema = CARD_TOOLS.find((t) => t.name === name).inputSchema;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ToolInputError('Arguments must be an object.');
+  const unknown = Object.keys(args).filter((k) => !(k in schema.properties));
+  if (unknown.length) throw new ToolInputError(`Unknown field(s): ${unknown.join(', ')}.`);
+  for (const key of schema.required) if (args[key] === undefined) throw new ToolInputError(`Missing required field: ${key}.`);
+  if (!/^[0-9a-f-]{36}$/.test(args.candidate_id)) throw new ToolInputError('Invalid candidate_id.');
+  if ('revision' in schema.properties && (!Number.isInteger(args.revision) || args.revision < 0)) throw new ToolInputError('Invalid revision.');
+  const card = async (rec, text) => ({ content: [{ type: 'text', text }], structuredContent: { card: cardView(rec, context) } });
+  const { db, ownerId } = context;
+  try {
+    if (name === 'card_refresh') {
+      const rec = await readCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);
+      if (!cardFor(rec.destination)) throw new StoreFailure(404, 'No card for this candidate');
+      return card(rec, `Candidate is ${rec.status}.`);
+    }
+    if (name === 'card_edit') {
+      const rec = await editCardCandidate(db, ownerId, args.candidate_id, args.ticket, args.revision, cardPayload(args.payload), at);
+      return card(rec, 'The owner edited the proposal in the card. It is still pending.');
+    }
+    if (name === 'card_approve') {
+      if (args.app_review !== undefined && typeof args.app_review !== 'boolean') throw new ToolInputError('app_review must be true or false.');
+      const current = await readCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);
+      if (!destinationById(current.destination)?.card?.approve)
+        throw new ToolInputError(`${appName(current.destination)} does not accept card approval yet; review it in the app.`);
+      const rec = await approveCardCandidate(db, ownerId, args.candidate_id, args.ticket, args.revision, { appReview: args.app_review === true }, at);
+      return card(rec, `The owner approved it in the card. ${appName(rec.destination)} saves it the next time it syncs; it is not saved yet.`);
+    }
+    const rec = await rejectCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);
+    return card(rec, 'The owner rejected the proposal in the card.');
+  } catch (error) {
+    if (error instanceof StoreFailure && [403, 404, 409].includes(error.status)) {
+      const code = error.status === 403 ? 'expired' : error.status === 409 ? 'conflict' : 'missing';
+      return { content: [{ type: 'text', text: error.message }], structuredContent: { error: code }, isError: true };
+    }
+    if (ADAPTER_ERROR.test(String(error?.message)))
+      throw new ToolInputError('The edit did not pass the destination\'s validation. Check the field formats.');
+    throw error;
+  }
+}
+
 /** hub:propose covers every destination; per-destination scopes come from older grants. */
 const acceptedScopes = (destination) => ['hub:propose', ...(destinationById(destination)?.legacyProposeScope ? [destinationById(destination).legacyProposeScope] : [])];
 export class ToolInputError extends Error {}
@@ -324,15 +442,24 @@ async function propose(context, destination, candidateType, payload) {
     throw error;
   }
   const structured = { candidate_id: result.id, status: result.status, duplicate: result.duplicate };
-  const text = result.duplicate ?
+  let text = result.duplicate ?
     `An identical proposal is already in the inbox (candidate_id ${result.id}, status ${result.status}). Nothing new was added. If this is a different occasion, include a date or a distinguishing note.` :
     `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(appName(destination))}`;
-  return { text, structured };
+  let meta;
+  if (isClaude(context) && cardFor(destination)) {
+    structured.card = cardView(result, context);
+    // The ticket goes only to the card (result _meta), never into content or structuredContent.
+    if (canUseCards(context) && result.status === 'pending')
+      meta = { 'life-hub/card': { ticket: (await issueCardTicket(context.db, context.ownerId, result.id, context.now())).ticket } };
+    text += ' The owner may review it in the Life Hub card; never approve or reject on their behalf.';
+  }
+  return { text, structured, meta };
 }
 
 /** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
 export async function callTool(name, args, context) {
   try {
+    if (CARD_TOOL_NAMES.has(name)) return await callCardTool(name, args, context);
     if (name === 'preview_reading_record') {
       // Preview never touches D1, and is only exposed to ChatGPT, not Claude/Codex.
       if (sourceFor(context) !== 'chatgpt') return null;
@@ -379,7 +506,7 @@ export async function callTool(name, args, context) {
     } else {
       return null;
     }
-    return { content: [{ type: 'text', text: outcome.text }], structuredContent: outcome.structured };
+    return { content: [{ type: 'text', text: outcome.text }], structuredContent: outcome.structured, ...(outcome.meta ? { _meta: outcome.meta } : {}) };
   } catch (error) {
     if (error instanceof ToolInputError || (error instanceof StoreFailure && error.status === 409)) {
       const text = error instanceof StoreFailure ? 'A conflicting proposal already uses this key.' : error.message;
