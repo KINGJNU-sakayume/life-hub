@@ -139,11 +139,11 @@ test('full connect: wrong password, then approve, exchange, call a tool, refresh
     const exchanged = await token(env, { grant_type: 'authorization_code', code: code2, redirect_uri: CALLBACK,
       client_id: clientId, code_verifier: verifier, resource: RESOURCE });
     assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
-    assert.equal(exchanged.body.scope, 'food:propose');
+    assert.equal(exchanged.body.scope, 'food:propose kyeokyeoi:propose');
     assert.ok(exchanged.body.access_token && exchanged.body.refresh_token);
 
     const listed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
-    assert.equal(listed.result.tools.length, 3);
+    assert.equal(listed.result.tools.length, 5);
 
     const proposed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/call',
       params: { name: 'propose_food_meal', arguments: { menu_name: 'Synthetic soup', eaten_on: '2026-11-01' } } })).json();

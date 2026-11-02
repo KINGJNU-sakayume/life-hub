@@ -4,9 +4,10 @@
  * One OAuth authorization server, two protected resources, plus the P1 API:
  * - /mcp/*                    Claude custom connector (MCP), scope food:propose, role claude
  * - /palate/*                 PALATE inbox API, scope food:inbox, role palate
+ * - /kyeokyeoi/*              켜켜이 inbox API, scope kyeokyeoi:inbox, role kyeokyeoi
  * - /authorize                owner password + consent page (ours)
  * - /oauth/token, /oauth/register, /.well-known/oauth-authorization-server   the library's
- * - /.well-known/oauth-protected-resource/{mcp,palate}                       each resource's
+ * - /.well-known/oauth-protected-resource/{mcp,palate,kyeokyeoi}             each resource's
  * - /health, /v1/*            P1 server-to-server API with static role tokens (unchanged)
  *
  * The servers need the public origin to name the issuer and resources, so they are built lazily
@@ -18,12 +19,12 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
-import { CLAUDE_CALLBACK, SCOPES, RESOURCE_PATHS, palateRedirectUri } from '../auth/clients.js';
+import { CLAUDE_CALLBACK, SCOPES, RESOURCE_PATHS, palateRedirectUri, kyeokyeoiRedirectUri } from '../auth/clients.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
-import { handlePalateRequest } from '../palate/api.js';
+import { handleInboxRequest } from '../inbox/api.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
-const OAUTH_PATHS = /^\/(?:mcp|palate|authorize|oauth\/|\.well-known\/oauth-)/;
+const OAUTH_PATHS = /^\/(?:mcp|palate|kyeokyeoi|authorize|oauth\/|\.well-known\/oauth-)/;
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const notConfigured = () => new Response(JSON.stringify({ error: 'OAuth is not configured' }), { status: 503, headers: JSON_HEADERS });
 const forbidden = () => new Response(JSON.stringify({ error: 'Token is not valid for this Life Hub' }), { status: 403, headers: JSON_HEADERS });
@@ -43,33 +44,40 @@ export const mcpHandler = {
     return guard(env, ctx, 'claude', SCOPES.PROPOSE) ?? handleMcpRequest(request, {
       db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(),
       allowedOrigins: [env.HUB_PUBLIC_ORIGIN, 'https://claude.ai'],
+      // Per-destination tools check these; grants made before a destination existed lack its scope.
+      scopes: [...(ctx.auth?.scope ?? [])],
     });
   },
 };
 
-export const palateHandler = {
-  async fetch(request, env, ctx) {
-    return guard(env, ctx, 'palate', SCOPES.INBOX) ?? handlePalateRequest(request, {
-      db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(),
-    });
-  },
-};
+function inboxHandler(role, scope, destination, prefix) {
+  return {
+    async fetch(request, env, ctx) {
+      return guard(env, ctx, role, scope) ?? handleInboxRequest(request, {
+        db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination, prefix,
+      });
+    },
+  };
+}
+export const palateHandler = inboxHandler('palate', SCOPES.INBOX, 'food', RESOURCE_PATHS.PALATE + '/v1');
+export const kyeokyeoiHandler = inboxHandler('kyeokyeoi', SCOPES.KYEOKYEOI_INBOX, 'kyeokyeoi', RESOURCE_PATHS.KYEOKYEOI + '/v1');
 
 export function createServers(origin) {
   const mcpResource = origin + RESOURCE_PATHS.MCP;
   const palateResource = origin + RESOURCE_PATHS.PALATE;
+  const kyeokyeoiResource = origin + RESOURCE_PATHS.KYEOKYEOI;
   const authorizationServer = new OAuthAuthorizationServer({
     issuer: origin,
-    resources: [mcpResource, palateResource],
+    resources: [mcpResource, palateResource, kyeokyeoiResource],
     // Older MCP clients may omit `resource`; they mean the MCP endpoint.
     defaultResource: mcpResource,
     authorizeEndpoint: origin + '/authorize',
     tokenEndpoint: origin + '/oauth/token',
     clientRegistrationEndpoint: origin + '/oauth/register',
-    // CIMD (Claude may use it; PALATE does) needs the global_fetch_strictly_public flag. DCR is the fallback.
+    // CIMD (Claude may use it; PALATE and 켜켜이 do) needs the global_fetch_strictly_public flag. DCR is the fallback.
     clientIdMetadataDocumentEnabled: true,
-    scopesSupported: [SCOPES.PROPOSE, SCOPES.INBOX],
-    // DCR is only for Claude; PALATE identifies itself with its CIMD document.
+    scopesSupported: [SCOPES.PROPOSE, SCOPES.INBOX, SCOPES.KYEOKYEOI_PROPOSE, SCOPES.KYEOKYEOI_INBOX],
+    // DCR is only for Claude; the destination apps identify themselves with their CIMD documents.
     clientRegistrationCallback: ({ clientMetadata }) => {
       const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
       if (!uris.includes(CLAUDE_CALLBACK))
@@ -86,7 +94,11 @@ export function createServers(origin) {
     resourceMetadata: { resource: palateResource, authorization_servers: [origin] },
     requiredScopes: [SCOPES.INBOX], validateToken, handler: palateHandler,
   });
-  return { authorizationServer, mcp, palate };
+  const kyeokyeoi = new OAuthResourceServer({
+    resourceMetadata: { resource: kyeokyeoiResource, authorization_servers: [origin] },
+    requiredScopes: [SCOPES.KYEOKYEOI_INBOX], validateToken, handler: kyeokyeoiHandler,
+  });
+  return { authorizationServer, mcp, palate, kyeokyeoi };
 }
 
 const under = (path, base) => path === base || path.startsWith(base + '/');
@@ -107,6 +119,10 @@ export default {
     if (under(path, RESOURCE_PATHS.PALATE) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.PALATE)) {
       if (!palateRedirectUri(env)) return notConfigured();
       return s.palate.fetch(request, env, ctx);
+    }
+    if (under(path, RESOURCE_PATHS.KYEOKYEOI) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.KYEOKYEOI)) {
+      if (!kyeokyeoiRedirectUri(env)) return notConfigured();
+      return s.kyeokyeoi.fetch(request, env, ctx);
     }
     if (path === '/authorize')
       return handleAuthorize(request, env, s.authorizationServer.getOAuthApi(env), { AuthorizationError, CimdFetchError });
