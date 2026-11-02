@@ -15,6 +15,7 @@ const APPS = {
   achievement: { url: 'https://owner.github.io/achievement/lifehub/', name: '업적 라이브러리', scope: 'achievement:inbox', path: '/achievement' },
   letterbookxd: { url: 'https://owner.github.io/letterbookxd/lifehub/', name: '책장', scope: 'letterbookxd:inbox', path: '/letterbookxd' },
   sub: { url: 'https://owner.github.io/sub/lifehub/', name: '역 도장깨기', scope: 'sub:inbox', path: '/sub' },
+  animan: { url: 'https://owner.github.io/AniMan/lifehub/', name: 'AniMan', scope: 'animan:inbox', path: '/animan' },
 };
 const clientId = (app) => app.url.replace(/lifehub\/$/, '') + 'lifehub-client.json';
 const realFetch = globalThis.fetch;
@@ -36,6 +37,7 @@ const makeEnv = (patch = {}) => ({
   HUB_ACHIEVEMENT_REDIRECT_URI: APPS.achievement.url,
   HUB_LETTERBOOKXD_REDIRECT_URI: APPS.letterbookxd.url,
   HUB_SUB_REDIRECT_URI: APPS.sub.url,
+  HUB_ANIMAN_REDIRECT_URI: APPS.animan.url,
   HUB_OWNER_ID: 'demo-owner', HUB_OWNER_PASSWORD: PASSWORD, HUB_OWNER_TOKEN: 'owner_' + 'A'.repeat(48), ...patch,
 });
 const call = (env, path, init = {}) => worker.fetch(new Request(ORIGIN + path, init), env, { waitUntil() {}, passThroughOnException() {}, props: {} });
@@ -208,5 +210,24 @@ test('역 도장깨기 connects as its own client and receives station_visit can
     assert.deepEqual(candidates.map((c) => c.candidate.candidate_type), ['station_visit']);
     assert.equal((await api(env, t, '/sub/v1/receipts', 'POST', { key: candidates[0].key, entity_type: 'station_visit', entity_id: 'st_6rCA7IOB7Jet' })).status, 200);
     assert.equal((await api(env, t, '/letterbookxd/v1/candidates')).status, 401);
+  } finally { env.DB.close(); }
+});
+
+test('AniMan connects (callback path with capitals) and receives media_progress candidates only', async () => {
+  const env = makeEnv();
+  try {
+    await seed(env);
+    const at = '2026-11-02T01:00:00Z';
+    await insertCandidate(env.DB, 'demo-owner', { hub_version: 1, source: 'claude', source_ref: 'claude-mcp:2026-11-02', created_at: at,
+      destination: 'animan', idempotency_key: 'mcp-' + 'n'.repeat(40), candidate_type: 'media_progress',
+      payload: { title: '가상 애니', kind: 'episode', up_to: 3 } }, at);
+    const { html, token } = await connect(env, APPS.animan);
+    assert.match(html, /animan:inbox/);
+    const t = token.access_token;
+    const { candidates } = await (await api(env, t, '/animan/v1/candidates')).json();
+    assert.deepEqual(candidates.map((c) => c.candidate.candidate_type), ['media_progress']);
+    assert.equal((await api(env, t, '/animan/v1/receipts', 'POST', { key: candidates[0].key, entity_type: 'media_progress',
+      entity_id: '027d9ee6-beb7-4309-abc1-28864f920a8f' })).status, 200);
+    assert.equal((await api(env, t, '/sub/v1/candidates')).status, 401);
   } finally { env.DB.close(); }
 });
