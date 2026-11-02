@@ -218,3 +218,23 @@ test('a duplicate proposal of an approved candidate issues no new ticket', async
     });
   } finally { db.close(); }
 });
+
+test('every cacheable result carries the 2026-07-28 caching hints', async () => {
+  const db = new TestD1();
+  try {
+    const modern = async (method, params = {}) => {
+      const response = await handleMcpRequest(new Request(ORIGIN + '/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 'x', method, params: { ...params, _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } } }),
+      }), ctx(db));
+      return (await response.json()).result;
+    };
+    for (const [method, params] of [['server/discover'], ['tools/list'], ['resources/list'], ['resources/read', { uri: 'ui://life-hub/card-food.html' }]]) {
+      const result = await modern(method, params);
+      assert.equal(result.resultType, 'complete', method);
+      assert.ok(Number.isInteger(result.ttlMs) && result.ttlMs >= 0, method + ' ttlMs');
+      assert.equal(result.cacheScope, 'private', method + ' cacheScope');
+    }
+  } finally { db.close(); }
+});

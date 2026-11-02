@@ -121,14 +121,15 @@ export async function handleMcpRequest(request, context) {
       return ok({ resources: isChatgpt ? [{
         uri: READING_PREVIEW_URI, name: 'reading-preview', title: 'Reading record preview',
         mimeType: 'text/html;profile=mcp-app',
-      }] : CARD_RESOURCES });
+      }] : CARD_RESOURCES, ttlMs: CACHE_MS, cacheScope: 'private' });
     case 'resources/read': {
       if (!hasResources) return notFound();
       const content = isChatgpt ?
         (params.uri === READING_PREVIEW_URI ? { uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML } : null) :
         readCardResource(params.uri);
       if (!content) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
-      return ok({ contents: [content] });
+      // 2026-07-28 caching: resources/list and resources/read MUST carry ttlMs + cacheScope.
+      return ok({ contents: [content], ttlMs: CACHE_MS, cacheScope: 'private' });
     }
     case 'tools/call': {
       if (typeof params.name !== 'string') return rpcError(era === 'modern' ? 400 : 200, id, -32602, 'Tool name required');
