@@ -38,6 +38,8 @@ const wishSchema = {
   },
 };
 
+const DATE_RULE = 'Resolve the date the user gave into year/month/day: if they say a month and day without a year (\"10월 8일\"), use the current year, or last year if that date is still ahead; resolve relative dates (\"어제\", \"지난주 토요일\", \"작년 크리스마스\") from today. Never derive a year from an age or school year (켜켜이 does that itself). Tell the user which year you assumed.';
+const REGION_RULE = 'Your resolution of the place to a Korean 시군구 (city/county/district) as "<시·도 short> <시군구>", e.g. 고양종합운동장 → "경기 고양시 일산서구", 해운대 → "부산 해운대구". For a well-known venue or landmark, use its actual district (look it up if unsure). Omit if you cannot tell. The owner confirms it before saving.';
 const memorySchema = {
   type: 'object',
   additionalProperties: false,
@@ -45,12 +47,15 @@ const memorySchema = {
   properties: {
     title: { type: 'string', minLength: 1, maxLength: 80, description: 'Short title for the memory, in the user\'s words.' },
     memo: { type: 'string', minLength: 1, maxLength: 2000, description: 'The memory as the user told it. Do not paste the whole conversation.' },
-    time_text: { type: 'string', minLength: 1, maxLength: 100, description: 'When it happened, exactly as the user said it (e.g. "고2 여름", "작년 크리스마스"). Do not convert ages or school years.' },
-    year: { type: 'integer', minimum: 1900, maximum: 2100, description: 'Only if the user stated the year.' },
-    month: { type: 'integer', minimum: 1, maximum: 12, description: 'Only if the user stated the month (requires year).' },
-    day: { type: 'integer', minimum: 1, maximum: 31, description: 'Only if the user stated the day (requires year and month).' },
-    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'Where it happened, as the user said it. The owner picks the exact region later.' },
+    time_text: { type: 'string', minLength: 1, maxLength: 100, description: 'When it happened, exactly as the user said it (e.g. "고2 여름", "10월 8일"). Keep this even when you also fill year/month/day.' },
+    year: { type: 'integer', minimum: 1900, maximum: 2100, description: 'Year of the memory. ' + DATE_RULE },
+    month: { type: 'integer', minimum: 1, maximum: 12, description: 'Month, when the user gave one (requires year).' },
+    day: { type: 'integer', minimum: 1, maximum: 31, description: 'Day, when the user gave one (requires year and month).' },
+    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'Where it happened, as the user said it (e.g. "고양종합운동장").' },
+    region_hint: { type: 'string', minLength: 1, maxLength: 60, description: REGION_RULE },
     emotions: { type: 'array', maxItems: 5, uniqueItems: true, items: { type: 'string', enum: [...KYEOKYEOI_EMOTIONS] }, description: 'Only feelings the user expressed, from this fixed list.' },
+    song_artist: { type: 'string', minLength: 1, maxLength: 100, description: 'Artist tied to the memory, e.g. the performer of a concert the user saw ("더 위켄드 콘서트" → "The Weeknd"), or a song they mention. Use the artist\'s usual name.' },
+    song_title: { type: 'string', minLength: 1, maxLength: 100, description: 'Song title, only if the user named a specific song.' },
   },
 };
 const visitSchema = {
@@ -58,8 +63,9 @@ const visitSchema = {
   additionalProperties: false,
   required: ['place_text'],
   properties: {
-    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'The city/county/district the user said they visited, in their words.' },
-    visited_on: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Visit date (YYYY-MM-DD) only if the user stated it; never guess.' },
+    place_text: { type: 'string', minLength: 1, maxLength: 100, description: 'Where the user said they went, in their words.' },
+    region_hint: { type: 'string', minLength: 1, maxLength: 60, description: REGION_RULE },
+    visited_on: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Visit date (YYYY-MM-DD) when the user gave one. ' + DATE_RULE },
     note: { type: 'string', minLength: 1, maxLength: 500, description: 'Optional short note in the user\'s words.' },
   },
 };
@@ -95,7 +101,7 @@ export const TOOLS = Object.freeze([
   {
     name: 'propose_memory',
     title: 'Propose a memory for 켜켜이',
-    description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Keep their own words: a short title, the memo, time_text exactly as said, place_text as said. Set year/month/day only if stated. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
+    description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Fill the form the way the user would: a short title, the memo, time_text and place_text in their words, plus your resolution of the date (year/month/day) and of the place (region_hint), and the artist/song when music is involved. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
     inputSchema: memorySchema,
     annotations: WRITE,
   },

@@ -6,10 +6,10 @@ Second destination, same shape as PALATE: Claude proposes, 켜켜이 pulls, the 
 
 | Type | Payload | Rule |
 | --- | --- | --- |
-| `memory` | `title` (≤80), `memo`?, `time_text`?, `year`?/`month`?/`day`?, `place_text`?, `emotions`? (fixed labels, ≤5) | Words stay the user's. Numeric date parts only when stated; a month needs a year, a day needs a month and must be a real date. **A memory never creates a visit.** |
-| `visit` | `place_text` (≤100), `visited_on`? (YYYY-MM-DD), `note`? | Only when the user explicitly says they went. |
+| `memory` | `title` (≤80), `memo`?, `time_text`?, `year`?/`month`?/`day`?, `place_text`?, `region_hint`? (≤60), `emotions`? (fixed labels, ≤5), `song_artist`?, `song_title`? | `time_text`/`place_text` keep the user's words. Claude resolves the date (month/day without a year → this year, or last year if still ahead; relative dates from today; never from ages) and the place to a 시군구 (`region_hint`, e.g. 고양종합운동장 → "경기 고양시 일산서구"), and fills the artist for concerts/music. A month needs a year, a day needs a month and must be a real date. **A memory never creates a visit.** |
+| `visit` | `place_text` (≤100), `region_hint`?, `visited_on`? (YYYY-MM-DD), `note`? | Only when the user explicitly says they went. |
 
-No region codes, photos or transcripts from the assistant: 켜켜이 resolves the region and time type while the owner reviews.
+No region codes, photos or transcripts from the assistant. 켜켜이 pre-selects the region only when `region_hint` matches exactly one 시군구, and pre-fills everything else; the owner confirms before saving.
 
 ## Claude tools
 
