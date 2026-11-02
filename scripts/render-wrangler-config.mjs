@@ -65,6 +65,12 @@ export const FIELDS = Object.freeze([
     hint: 'empty, or 역 도장깨기 (sub)\'s Life Hub callback URL such as https://<user>.github.io/sub/lifehub/ (no query or fragment)',
   },
   {
+    env: 'HUB_SPOTIFY_CLIENT_ID', placeholder: 'REPLACE_WITH_YOUR_SPOTIFY_CLIENT_ID', optional: true,
+    valid: /^[0-9a-f]{32}$/,
+    normalize: (v) => v.trim().toLowerCase(),
+    hint: 'empty, or the 32-character hex Client ID of your Spotify app',
+  },
+  {
     env: 'HUB_ANIMAN_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ANIMAN_REDIRECT_URI', optional: true,
     valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
