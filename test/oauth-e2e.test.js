@@ -29,18 +29,18 @@ async function pkce() {
   const challenge = b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
   return { verifier, challenge };
 }
-async function register(env, redirectUris = [CALLBACK]) {
+async function register(env, redirectUris = [CALLBACK], clientName = 'Claude') {
   return call(env, '/oauth/register', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_name: 'Claude', redirect_uris: redirectUris, token_endpoint_auth_method: 'none',
+    body: JSON.stringify({ client_name: clientName, redirect_uris: redirectUris, token_endpoint_auth_method: 'none',
       grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }),
   });
 }
 function cookiesFrom(response) {
   return response.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
 }
-async function openConsent(env, clientId, challenge, state = 'state-123') {
-  const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: CALLBACK,
+async function openConsent(env, clientId, challenge, state = 'state-123', redirectUri = CALLBACK) {
+  const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri,
     code_challenge: challenge, code_challenge_method: 'S256', state, scope: 'hub:propose', resource: RESOURCE });
   const response = await call(env, '/authorize?' + query);
   const html = await response.text();
@@ -166,6 +166,88 @@ test('full connect: wrong password, then approve, exchange, call a tool, refresh
 
     // Rotating the owner ID invalidates previously issued connector tokens.
     const rotated = await mcp({ ...env, HUB_OWNER_ID: 'other-owner' }, refreshed.body.access_token, { jsonrpc: '2.0', id: 4, method: 'tools/list' });
+    assert.equal(rotated.status, 403);
+  } finally { env.DB.close(); }
+});
+
+
+const CODEX_CALLBACK = 'http://127.0.0.1:53147/callback/AbC_def123';
+
+test('Codex DCR callback allowlist rejects foreign hosts, mixed registrations and spoofed loopback', async () => {
+  const env = makeEnv();
+  try {
+    const ok = await register(env, [CODEX_CALLBACK], 'Codex CLI');
+    assert.equal(ok.status, 201, await ok.text());
+    for (const uri of [
+      'http://localhost:53147/callback/AbC_def123',
+      'http://127.0.0.2:53147/callback/AbC_def123',
+      'http://127.0.0.1:53147/elsewhere',
+      'http://127.0.0.1:53147/callback?return=https://evil.example',
+      'https://127.0.0.1:53147/callback',
+      'http://127.0.0.1.evil.example:53147/callback',
+      'http://127.0.0.1:53147/callback/../other',
+    ]) {
+      const rejected = await register(env, [uri], 'Impersonator');
+      assert.equal(rejected.status, 400, uri);
+    }
+    assert.equal((await register(env, [CALLBACK, CODEX_CALLBACK])).status, 400);
+    assert.equal((await register(env, [CODEX_CALLBACK, CODEX_CALLBACK])).status, 400);
+  } finally { env.DB.close(); }
+});
+
+test('Codex OAuth + PKCE submits independently attributed pending proposals and cannot read Claude status', async () => {
+  const env = makeEnv();
+  try {
+    const { client_id: codexClient } = await (await register(env, [CODEX_CALLBACK], 'Codex CLI')).json();
+    const { client_id: claudeClient } = await (await register(env)).json();
+    const { verifier, challenge } = await pkce();
+    const page = await openConsent(env, codexClient, challenge, 'codex-state', CODEX_CALLBACK);
+    assert.equal(page.response.status, 200, page.html);
+    assert.match(page.html, /127\\.0\\.0\\.1/);
+    assert.match(page.html, /Codex/);
+    assert.match(page.response.headers.get('Content-Security-Policy'), /form-action 'self' http:\\/\\/127\\.0\\.0\\.1:53147/);
+    const approved = await submit(env, page, { decision: 'approve', password: PASSWORD });
+    assert.equal(approved.status, 302);
+    const redirected = new URL(approved.headers.get('Location'));
+    assert.equal(redirected.origin + redirected.pathname, CODEX_CALLBACK);
+    assert.equal(redirected.searchParams.get('iss'), ORIGIN);
+    const tokens = await token(env, { grant_type: 'authorization_code', code: redirected.searchParams.get('code'),
+      redirect_uri: CODEX_CALLBACK, client_id: codexClient, code_verifier: verifier, resource: RESOURCE });
+    assert.equal(tokens.status, 200, JSON.stringify(tokens.body));
+    assert.equal(tokens.body.scope, 'hub:propose');
+
+    const arguments_ = { wish_kind: 'try_menu', name: 'Fictional codex pasta' };
+    const submitted = await (await mcp(env, tokens.body.access_token, { jsonrpc: '2.0', id: 10, method: 'tools/call',
+      params: { name: 'propose_food_wish', arguments: arguments_ } })).json();
+    assert.equal(submitted.result.structuredContent.status, 'pending');
+    const id = submitted.result.structuredContent.candidate_id;
+    const row = await env.DB.prepare('SELECT source, status, envelope_json FROM inbox WHERE id=?').bind(id).first();
+    assert.equal(row.source, 'codex');
+    assert.equal(row.status, 'pending');
+    assert.match(JSON.parse(row.envelope_json).source_ref, /^codex-mcp:/);
+
+    const { verifier: cVerifier, challenge: cChallenge } = await pkce();
+    const cPage = await openConsent(env, claudeClient, cChallenge);
+    const cApproved = await submit(env, cPage, { decision: 'approve', password: PASSWORD });
+    const cCode = new URL(cApproved.headers.get('Location')).searchParams.get('code');
+    const cTokens = await token(env, { grant_type: 'authorization_code', code: cCode,
+      redirect_uri: CALLBACK, client_id: claudeClient, code_verifier: cVerifier, resource: RESOURCE });
+    assert.equal(cTokens.status, 200);
+    const hidden = await (await mcp(env, cTokens.body.access_token, { jsonrpc: '2.0', id: 12, method: 'tools/call',
+      params: { name: 'get_proposal_status', arguments: { candidate_id: id } } })).json();
+    assert.equal(hidden.result.isError, true);
+
+    // Distinct connector sources get distinct deduplication keys for identical meanings.
+    const claudeSubmitted = await (await mcp(env, cTokens.body.access_token, { jsonrpc: '2.0', id: 13, method: 'tools/call',
+      params: { name: 'propose_food_wish', arguments: arguments_ } })).json();
+    assert.equal(claudeSubmitted.result.structuredContent.duplicate, false);
+    assert.notEqual(claudeSubmitted.result.structuredContent.candidate_id, id);
+    assert.equal((await env.DB.prepare('SELECT COUNT(*) AS n FROM inbox').bind().first()).n, 2);
+
+    const crossUse = await call(env, '/v1/candidates', { headers: { Authorization: 'Bearer ' + tokens.body.access_token } });
+    assert.equal(crossUse.status, 401);
+    const rotated = await mcp({ ...env, HUB_OWNER_ID: 'other-owner' }, tokens.body.access_token, {
+      jsonrpc: '2.0', id: 14, method: 'tools/list' });
     assert.equal(rotated.status, 403);
   } finally { env.DB.close(); }
 });
