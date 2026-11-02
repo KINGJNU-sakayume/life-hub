@@ -11,7 +11,9 @@
     // Optional: PALATE's exact OAuth redirect URI (its app URL). Empty disables the PALATE inbox API.
     "HUB_PALATE_REDIRECT_URI": "REPLACE_WITH_YOUR_PALATE_REDIRECT_URI",
     // Optional: 켜켜이's exact OAuth redirect URI (its app URL). Empty disables the 켜켜이 inbox API.
-    "HUB_KYEOKYEOI_REDIRECT_URI": "REPLACE_WITH_YOUR_KYEOKYEOI_REDIRECT_URI"
+    "HUB_KYEOKYEOI_REDIRECT_URI": "REPLACE_WITH_YOUR_KYEOKYEOI_REDIRECT_URI",
+    // Optional: potcast's Life Hub callback page URL. Empty disables the potcast inbox API.
+    "HUB_POTCAST_REDIRECT_URI": "REPLACE_WITH_YOUR_POTCAST_REDIRECT_URI"
   },
   "d1_databases": [
     {

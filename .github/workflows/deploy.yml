@@ -60,6 +60,7 @@ jobs:
           HUB_PUBLIC_ORIGIN: ${{ vars.HUB_PUBLIC_ORIGIN }}
           HUB_PALATE_REDIRECT_URI: ${{ vars.HUB_PALATE_REDIRECT_URI }}
           HUB_KYEOKYEOI_REDIRECT_URI: ${{ vars.HUB_KYEOKYEOI_REDIRECT_URI }}
+          HUB_POTCAST_REDIRECT_URI: ${{ vars.HUB_POTCAST_REDIRECT_URI }}
         run: node scripts/render-wrangler-config.mjs wrangler.example.jsonc wrangler.jsonc
 
       - name: Apply D1 migrations (remote)

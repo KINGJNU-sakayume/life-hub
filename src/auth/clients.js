@@ -9,10 +9,13 @@ export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
 
 export const SCOPES = Object.freeze({
-  PROPOSE: 'food:propose', INBOX: 'food:inbox',
-  KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox',
+  /** One scope for every Claude proposal tool, so adding a destination never needs a reconnect. */
+  HUB_PROPOSE: 'hub:propose',
+  // Per-destination proposal scopes from earlier grants; still honored.
+  PROPOSE: 'food:propose', KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose',
+  INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
 });
-export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi' });
+export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast' });
 
 /** A destination app's redirect URI comes from deploy config; null when unset or malformed. */
 function configuredRedirect(env, name) {
@@ -21,15 +24,16 @@ function configuredRedirect(env, name) {
 }
 export const palateRedirectUri = (env) => configuredRedirect(env, 'HUB_PALATE_REDIRECT_URI');
 export const kyeokyeoiRedirectUri = (env) => configuredRedirect(env, 'HUB_KYEOKYEOI_REDIRECT_URI');
+export const potcastRedirectUri = (env) => configuredRedirect(env, 'HUB_POTCAST_REDIRECT_URI');
 
 export function clientProfiles(env) {
   const profiles = [{
     id: 'claude', role: 'claude', redirectUri: CLAUDE_CALLBACK,
-    resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.PROPOSE, SCOPES.KYEOKYEOI_PROPOSE],
+    resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.HUB_PROPOSE],
     // Older MCP clients may omit `resource`; the authorization server defaults it to /mcp.
     allowMissingResource: true,
     title: 'Claude',
-    grants: '음식 기록과 추억·방문 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
+    grants: '음식·추억·방문·음악 감상 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
   }];
   const palate = palateRedirectUri(env);
   if (palate) profiles.push({
@@ -46,6 +50,14 @@ export function clientProfiles(env) {
     allowMissingResource: false,
     title: '켜켜이',
     grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  });
+  const potcast = potcastRedirectUri(env);
+  if (potcast) profiles.push({
+    id: 'potcast', role: 'potcast', redirectUri: potcast,
+    resourcePath: RESOURCE_PATHS.POTCAST, scopes: [SCOPES.POTCAST_INBOX],
+    allowMissingResource: false,
+    title: 'potcast',
+    grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, potcast에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   });
   return profiles;
 }

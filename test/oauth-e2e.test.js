@@ -41,7 +41,7 @@ function cookiesFrom(response) {
 }
 async function openConsent(env, clientId, challenge, state = 'state-123') {
   const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: CALLBACK,
-    code_challenge: challenge, code_challenge_method: 'S256', state, scope: 'food:propose', resource: RESOURCE });
+    code_challenge: challenge, code_challenge_method: 'S256', state, scope: 'hub:propose', resource: RESOURCE });
   const response = await call(env, '/authorize?' + query);
   const html = await response.text();
   const handle = /name="handle" value="([^"]+)"/.exec(html)?.[1];
@@ -79,7 +79,7 @@ test('discovery: 401 challenge points to metadata naming this resource and issue
     const prm = await (await call(env, '/.well-known/oauth-protected-resource/mcp')).json();
     assert.equal(prm.resource, RESOURCE);
     assert.deepEqual(prm.authorization_servers, [ORIGIN]);
-    assert.deepEqual(prm.scopes_supported, ['food:propose']);
+    assert.deepEqual(prm.scopes_supported, ['hub:propose']);
 
     const asm = await (await call(env, '/.well-known/oauth-authorization-server')).json();
     assert.equal(asm.issuer, ORIGIN);
@@ -139,11 +139,11 @@ test('full connect: wrong password, then approve, exchange, call a tool, refresh
     const exchanged = await token(env, { grant_type: 'authorization_code', code: code2, redirect_uri: CALLBACK,
       client_id: clientId, code_verifier: verifier, resource: RESOURCE });
     assert.equal(exchanged.status, 200, JSON.stringify(exchanged.body));
-    assert.equal(exchanged.body.scope, 'food:propose kyeokyeoi:propose');
+    assert.equal(exchanged.body.scope, 'hub:propose');
     assert.ok(exchanged.body.access_token && exchanged.body.refresh_token);
 
     const listed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).json();
-    assert.equal(listed.result.tools.length, 5);
+    assert.equal(listed.result.tools.length, 6);
 
     const proposed = await (await mcp(env, exchanged.body.access_token, { jsonrpc: '2.0', id: 2, method: 'tools/call',
       params: { name: 'propose_food_meal', arguments: { menu_name: 'Synthetic soup', eaten_on: '2026-11-01' } } })).json();

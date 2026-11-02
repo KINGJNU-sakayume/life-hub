@@ -11,8 +11,9 @@ globalThis.Cloudflare = { compatibilityFlags: { global_fetch_strictly_public: tr
 const APPS = {
   kyeokyeoi: { url: 'https://owner.github.io/kyeokyeoi/', name: '켜켜이', scope: 'kyeokyeoi:inbox', path: '/kyeokyeoi' },
   palate: { url: 'https://owner.github.io/food/', name: 'PALATE', scope: 'food:inbox', path: '/palate' },
+  potcast: { url: 'https://owner.github.io/potcast/lifehub/', name: 'potcast', scope: 'potcast:inbox', path: '/potcast' },
 };
-const clientId = (app) => app.url + 'lifehub-client.json';
+const clientId = (app) => app.url.replace(/lifehub\/$/, '') + 'lifehub-client.json';
 const realFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
@@ -28,7 +29,7 @@ const ORIGIN = 'https://hub.example';
 const PASSWORD = 'synthetic-owner-password-' + 'k'.repeat(24);
 const makeEnv = (patch = {}) => ({
   DB: new TestD1(), OAUTH_KV: new TestKV(), HUB_PUBLIC_ORIGIN: ORIGIN,
-  HUB_PALATE_REDIRECT_URI: APPS.palate.url, HUB_KYEOKYEOI_REDIRECT_URI: APPS.kyeokyeoi.url,
+  HUB_PALATE_REDIRECT_URI: APPS.palate.url, HUB_KYEOKYEOI_REDIRECT_URI: APPS.kyeokyeoi.url, HUB_POTCAST_REDIRECT_URI: APPS.potcast.url,
   HUB_OWNER_ID: 'demo-owner', HUB_OWNER_PASSWORD: PASSWORD, HUB_OWNER_TOKEN: 'owner_' + 'A'.repeat(48), ...patch,
 });
 const call = (env, path, init = {}) => worker.fetch(new Request(ORIGIN + path, init), env, { waitUntil() {}, passThroughOnException() {}, props: {} });
@@ -120,5 +121,24 @@ test('without HUB_KYEOKYEOI_REDIRECT_URI the 켜켜이 profile and API are off',
   try {
     assert.equal((await call(env, '/kyeokyeoi/v1/candidates')).status, 503);
     assert.equal((await connect(env, APPS.kyeokyeoi)).status, 403);
+  } finally { env.DB.close(); }
+});
+
+test('potcast connects via its callback page and receives album_listening candidates only', async () => {
+  const env = makeEnv();
+  try {
+    await seed(env);
+    const at = '2026-11-02T01:00:00Z';
+    await insertCandidate(env.DB, 'demo-owner', { hub_version: 1, source: 'claude', source_ref: 'claude-mcp:2026-11-02', created_at: at,
+      destination: 'potcast', idempotency_key: 'mcp-' + 'q'.repeat(40), candidate_type: 'album_listening',
+      payload: { artist: 'Synthetic Artist', album: 'Synthetic Album', origin: 'conversation', whole_album: true } }, at);
+    const { html, token } = await connect(env, APPS.potcast);
+    assert.match(html, /potcast:inbox/);
+    const { candidates } = await (await api(env, token.access_token, '/potcast/v1/candidates')).json();
+    assert.deepEqual(candidates.map((c) => c.candidate.candidate_type), ['album_listening']);
+    const key = candidates[0].key;
+    assert.equal((await api(env, token.access_token, '/potcast/v1/receipts', 'POST', { key, entity_type: 'memory', entity_id: 'x' })).status, 400);
+    assert.equal((await api(env, token.access_token, '/potcast/v1/receipts', 'POST', { key, entity_type: 'album_listening', entity_id: 'A'.repeat(22) })).status, 200);
+    assert.equal((await api(env, token.access_token, '/kyeokyeoi/v1/candidates')).status, 401);
   } finally { env.DB.close(); }
 });

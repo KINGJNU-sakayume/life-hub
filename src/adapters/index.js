@@ -4,8 +4,9 @@
  */
 import { toFoodCandidate } from './food.js';
 import { toKyeokyeoiCandidate } from './kyeokyeoi.js';
+import { toPotcastCandidate } from './potcast.js';
 
-const ADAPTERS = Object.freeze({ food: toFoodCandidate, kyeokyeoi: toKyeokyeoiCandidate });
+const ADAPTERS = Object.freeze({ food: toFoodCandidate, kyeokyeoi: toKyeokyeoiCandidate, potcast: toPotcastCandidate });
 
 /** Validates a full Hub envelope against its destination; returns the destination-shaped candidate. */
 export function toDestinationCandidate(envelope) {
