@@ -63,6 +63,10 @@ async function connectPalate(env) {
   assert.equal(approved.status, 302);
   const location = new URL(approved.headers.get('Location'));
   assert.equal(location.origin + location.pathname, PALATE_APP);
+  // Browsers enforce form-action on the redirect after the POST: the consent page must allow it.
+  const formAction = /form-action ([^;]+)/.exec(page.response.headers.get('Content-Security-Policy'))[1].split(' ');
+  assert.ok(formAction.includes(location.origin), formAction.join(' '));
+  assert.ok(!formAction.includes('https://claude.ai'));
   const tokenResponse = await call(env, '/oauth/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: PALATE_ORIGIN },
     body: new URLSearchParams({ grant_type: 'authorization_code', code: location.searchParams.get('code'),
