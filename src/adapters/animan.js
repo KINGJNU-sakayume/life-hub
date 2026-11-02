@@ -12,7 +12,7 @@
  */
 import { isObject, hasOnly, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
 
 function validProgress(p) {
