@@ -44,7 +44,7 @@ test('legacy handshake, notification and tool listing', async () => {
 
     const list = await send(db, legacy('tools/list'));
     assert.deepEqual(list.body.result.tools.map((t) => t.name),
-      ['get_proposal_status', 'propose_food_meal', 'propose_food_wish', 'propose_album_listening', 'propose_activity_record', 'propose_achievement', 'propose_reading_record', 'propose_station_visit', 'propose_media_progress', 'propose_memory', 'propose_region_visit', 'propose_daily_mission']);
+      ['get_proposal_status', 'propose_food_meal', 'propose_food_wish', 'propose_album_listening', 'propose_activity_record', 'propose_achievement', 'propose_reading_record', 'propose_station_visit', 'propose_station_draw', 'propose_media_progress', 'propose_memory', 'propose_region_visit', 'propose_daily_mission']);
     assert.equal((await send(db, legacy('ping'))).body.result.resultType, 'complete');
   } finally { db.close(); }
 });

@@ -7,6 +7,10 @@
  *   it or the name is shared by different stations. The app finds the station and the owner confirms.
  * - `date` is the day of the visit, resolved by the assistant.
  * - No photos (stickers are made in the app), no station codes.
+ *
+ * `station_draw` (cards stage 5): a station Life Hub drew from the pool the app shared (lines switched on,
+ * scope, and "unvisited only"), never one the assistant chose: `{ date, line, station }` with the app's own
+ * station name and line name. Approved, it becomes the app's current destination; it never stamps.
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
@@ -17,13 +21,20 @@ function validVisit(p) {
     validDate(p.date) && optionalText(p.note, 300);
 }
 
+function validDraw(p) {
+  return hasOnly(p, ['date', 'line', 'station']) && validDate(p.date) && requiredText(p.line, 20) && requiredText(p.station, 40);
+}
+
 export function validateSubCandidate(candidate) {
   if (!isObject(candidate) || !hasOnly(candidate, [
     'schema_version', 'source', 'source_ref', 'idempotency_key', 'created_at', 'candidate_type', 'payload',
   ]) || candidate.schema_version !== 1 || !SOURCES.has(candidate.source) || !isObject(candidate.payload))
     throw new Error('Invalid sub candidate');
-  if (candidate.candidate_type !== 'station_visit') throw new Error('Unsupported sub candidate type');
-  if (!validVisit(candidate.payload)) throw new Error('Invalid sub station_visit candidate');
+  if (candidate.candidate_type === 'station_visit') {
+    if (!validVisit(candidate.payload)) throw new Error('Invalid sub station_visit candidate');
+  } else if (candidate.candidate_type === 'station_draw') {
+    if (!validDraw(candidate.payload)) throw new Error('Invalid sub station_draw candidate');
+  } else throw new Error('Unsupported sub candidate type');
   return structuredClone(candidate);
 }
 

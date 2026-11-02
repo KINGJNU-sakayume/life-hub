@@ -22,7 +22,7 @@ var fmt=function(n){return typeof n==='number'?n.toLocaleString('ko-KR'):'';};
 function cond(p){var t=fmt(p.target),u=p.unit||'';
   return {count:'기록 '+t+'번',total:'누적 '+t+u,streak:t+'일 연속',tag:'#'+(p.tag||'')+' 기록 한 번',tag_count:'#'+(p.tag||'')+' 기록 '+t+'번'}[p.condition_type]||'';}
 function catText(c,name){return name?(exact(c,name)?name:name+' (앱에서 확인)'):'';}
-var CAT=function(c,required){return {name:'category',title:'카테고리',items:cats(c),value:c.payload.category,required:required,order:[],noun:'카테고리',example:'러닝',missing:'앱을 한 번 열면 여기서 카테고리를 고를 수 있어요.',picked:'고른 카테고리'};};
+var CAT=function(c,required){return {name:'category',title:'카테고리',items:cats(c),value:c.payload.category,required:required,order:[],noun:'카테고리',example:'러닝',missing:'앱을 한 번 열면 카테고리를 고를 수 있어요.',picked:'고른 카테고리'};};
 var num=function(v){if(v==='')return undefined;var n=Number(String(v).replace(/,/g,''));return isFinite(n)?n:NaN;};
 var later={message:'카테고리를 고르면 바로 저장돼요. 지금 승인하면 앱에서 한 번 더 확인해요.',later:'앱에서 고를게요'};
 return {
@@ -41,7 +41,7 @@ return {
       h.input('tag','태그',p.tag,{optional:true,max:30})+LH_PICK.html(h,CAT(c,false))+h.input('description','설명',p.description,{optional:true,area:true,max:200});
     return LH_PICK.html(h,CAT(c,true))+h.input('date','한 날',p.date,{type:'date',max:10})+
       '<div class="two">'+h.input('value','양',p.value==null?'':String(p.value),{optional:true,type:'number',max:12})+h.input('unit','단위',p.unit,{optional:true,max:20})+'</div>'+
-      h.input('tags','태그 (쉼표로 구분)',(p.tags||[]).join(', '),{optional:true,max:330})+h.input('memo','메모',p.memo,{optional:true,area:true,max:500});},
+      h.input('tags','태그 (쉼표 구분)',(p.tags||[]).join(', '),{optional:true,max:330})+h.input('memo','메모',p.memo,{optional:true,area:true,max:500});},
   bind:function(form,c,h){LH_PICK.bind(form,h,CAT(c,c.type!=='achievement_definition'));},
   preApprove:function(c){var p=c.payload;
     if(c.type==='achievement_definition')return p.category&&!exact(c,p.category)?later:null;

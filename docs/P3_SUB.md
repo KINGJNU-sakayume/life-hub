@@ -23,3 +23,20 @@
 ## Setup
 
 Repository variable `HUB_SUB_REDIRECT_URI` = `https://<user>.github.io/sub/lifehub/`; deploy. No migration, no reconnect.
+
+
+## Cards stage 5: station draw and the station card
+
+- **`station_draw`** `{ date, line, station }` (`propose_station_draw`, no input). Life Hub draws like the app — a
+  line first, then a station on it — only from the **pool** the app shares (`PUT /sub/v1/refs/pool`: the stations
+  drawable right now, which reflects the lines switched on, the area, and "unvisited only"; the owner chose to share
+  it). Approved (「여기 갈래요」), the app makes it the current destination after checking it is still drawable and
+  the date is today; a draw never stamps.
+- **Reference lists**: `lines` (`{id, label: name, group: colour}`), `stations` (the public line-station list,
+  `{id, label: station name, group: line name}`, 652 items) and `pool` (same shape). sub raises the refs limit for
+  `stations` and `pool` to 800 items / 48 KB (`refLimits`). The card gets `lines` and `stations` (a draw card only
+  the drawn line's), never the pool.
+- **Station card**: a 역명판 (line colour, the station, its neighbours). A fresh pending draw rolls like
+  `core/draw.js` (lines top→bottom slowing down, then stations, then a brake shake); a visit card edits the station
+  with the app's station names. A visit is stamped without asking only when its name means exactly one station
+  (`stationMatches`, like the app's `findStations`); otherwise `card_approve` keeps a last check in the app.

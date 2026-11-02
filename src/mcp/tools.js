@@ -259,6 +259,13 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_station_draw',
+    title: 'Draw a station for 역 도장깨기',
+    description: 'Draw a random station for the user\'s 역 도장깨기 when they ask for a station draw, a random station to visit, or where to go next. Takes no input: Life Hub draws a line, then a station, from what the app says can be drawn now (the lines switched on, the area, and unvisited stations if the owner chose that). Never pick or suggest a station yourself. Approved (「여기 갈래요」), it becomes the app\'s current destination; it never stamps a visit. Asking again draws again.',
+    inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    annotations: WRITE,
+  },
+  {
     name: 'propose_media_progress',
     title: 'Propose anime/manga progress for AniMan',
     description: 'Propose ONE progress update the user stated for an anime they watch or a manga they read, for AniMan (it maps episodes and volumes onto the original chapters). Use only when the user says they watched/read it, never for plans. Give up_to for "N화/권까지" (earlier ones count as done) or numbers for specific ones; add season only when they counted within a season. AniMan matches the series in its own catalogue. ' + pendingNote('AniMan') + ' Identical proposals are de-duplicated.',
@@ -316,7 +323,7 @@ export const CARD_TOOLS = Object.freeze([
 const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
   propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
-  propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_media_progress: 'animan',
+  propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_station_draw: 'sub', propose_media_progress: 'animan',
   propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette',
 });
 /** Cards are a Claude feature for now; the card may approve only with an explicit hub:approve grant. */
@@ -354,12 +361,30 @@ function cardView(rec, context, refs, extra) {
   };
 }
 
-/** Reference list items by kind, for the card picker (only the kinds the destination declares). */
-async function cardRefs(context, destination) {
-  const kinds = destinationById(destination)?.refKinds ?? [];
+/**
+ * Reference list items by kind for the card (`cardRefKinds`, else every declared kind). A station draw card
+ * only needs the drawn line's stations.
+ */
+async function cardRefs(context, rec) {
+  const d = destinationById(rec.destination);
+  const kinds = d?.cardRefKinds ?? d?.refKinds ?? [];
   if (!kinds.length) return undefined;
-  const stored = await getDestinationRefs(context.db, context.ownerId, destination);
-  return Object.fromEntries(kinds.map((k) => [k, stored[k]?.items ?? []]));
+  const stored = await getDestinationRefs(context.db, context.ownerId, rec.destination);
+  const refs = Object.fromEntries(kinds.map((k) => [k, stored[k]?.items ?? []]));
+  if (rec.candidate.candidate_type === 'station_draw' && refs.stations) {
+    const line = finalEnvelope(rec).payload.line;
+    refs.stations = refs.stations.filter((s) => s.group === line);
+  }
+  return refs;
+}
+
+/** 역 도장깨기 names: '망원역' and '망원' are the same; '신촌(경의중앙)' only matches itself. */
+const bareStation = (name) => String(name).normalize('NFKC').replace(/\s+/g, '').replace(/\(.*\)$/, '').replace(/역$/, '');
+/** Distinct stations a proposed name could mean (like the app's findStations, without the line hint). */
+export function stationMatches(name, stations) {
+  const exact = /\(.*\)$/.test(name) ? [name] : null;
+  const wanted = bareStation(name);
+  return [...new Set((stations ?? []).map((s) => s.label).filter((l) => (exact ? exact.includes(l) : bareStation(l) === wanted)))];
 }
 
 /**
@@ -374,6 +399,7 @@ export function needsAppReview(destination, type, payload, refs) {
     const hits = (refs?.categories ?? []).filter((c) => c.label === payload.category).length;
     return type === 'achievement_definition' && payload.category === undefined ? false : hits !== 1;
   }
+  if (destination === 'sub' && type === 'station_visit') return stationMatches(payload.station, refs?.stations).length !== 1;
   if (destination === 'kyeokyeoi') {
     const labels = new Set((refs?.regions ?? []).map((r) => r.label));
     const exact = typeof payload.region_hint === 'string' && labels.has(payload.region_hint);
@@ -400,7 +426,7 @@ async function callCardTool(name, args, context) {
   for (const key of schema.required) if (args[key] === undefined) throw new ToolInputError(`Missing required field: ${key}.`);
   if (!/^[0-9a-f-]{36}$/.test(args.candidate_id)) throw new ToolInputError('Invalid candidate_id.');
   if ('revision' in schema.properties && (!Number.isInteger(args.revision) || args.revision < 0)) throw new ToolInputError('Invalid revision.');
-  const card = async (rec, text) => ({ content: [{ type: 'text', text }], structuredContent: { card: cardView(rec, context, await cardRefs(context, rec.destination)) } });
+  const card = async (rec, text) => ({ content: [{ type: 'text', text }], structuredContent: { card: cardView(rec, context, await cardRefs(context, rec)) } });
   const { db, ownerId } = context;
   try {
     if (name === 'card_refresh') {
@@ -417,7 +443,7 @@ async function callCardTool(name, args, context) {
       const current = await readCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);
       if (!destinationById(current.destination)?.card?.approve)
         throw new ToolInputError(`${appName(current.destination)} does not accept card approval yet; review it in the app.`);
-      const forced = needsAppReview(current.destination, current.candidate.candidate_type, finalEnvelope(current).payload, await cardRefs(context, current.destination));
+      const forced = needsAppReview(current.destination, current.candidate.candidate_type, finalEnvelope(current).payload, await cardRefs(context, current));
       const rec = await approveCardCandidate(db, ownerId, args.candidate_id, args.ticket, args.revision, { appReview: args.app_review === true || forced }, at);
       return card(rec, `The owner approved it in the card. ${appName(rec.destination)} saves it the next time it syncs; it is not saved yet.`);
     }
@@ -582,6 +608,33 @@ async function proposeDailyMission(context) {
   return outcome;
 }
 
+/**
+ * 역 도장깨기: like the app's draw, a line first, then a station on it, only from the pool the app shared
+ * (it already reflects lines, area and "unvisited only"). The app checks again before using it.
+ */
+async function proposeStationDraw(context) {
+  const destination = 'sub';
+  if (!acceptedScopes(destination).some((s) => (context.scopes ?? []).includes(s)))
+    throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub MCP server in their client, then try again.`);
+  const refs = await getDestinationRefs(context.db, context.ownerId, destination);
+  const pool = (refs.pool?.items ?? []).filter((s) => s.group && s.label);
+  if (!pool.length)
+    throw new ToolInputError(`${appName(destination)} has not shared which stations can be drawn (or none are left). Ask the user to connect 역 도장깨기 to Life Hub and open it once, or check its draw settings.`);
+  const lines = [...new Set(pool.map((s) => s.group))];
+  const line = lines[randomIndex(lines.length)];
+  const onLine = pool.filter((s) => s.group === line);
+  const station = onLine[randomIndex(onLine.length)].label;
+  const date = new Date(context.now() + 9 * 3600_000).toISOString().slice(0, 10);
+  const outcome = await propose(context, destination, 'station_draw', { date, line, station });
+  const shown = station.replace(/\(.*\)$/, '');
+  outcome.structured.line = line;
+  outcome.structured.station = station;
+  outcome.text = `Life Hub drew ${shown}역 on ${line}. ` + (outcome.structured.status === 'pending'
+    ? 'It becomes the current destination in 역 도장깨기 once the owner confirms (「여기 갈래요」 in the card, or in the app). Do not draw or suggest another station yourself.'
+    : `Its status is ${outcome.structured.status}.`) + (outcome.text.includes('Life Hub card') ? ' Never confirm or reject on the owner\'s behalf.' : '');
+  return outcome;
+}
+
 /** Returns { content, structuredContent, isError? }, or null for an unknown tool. Throws only for server faults. */
 export async function callTool(name, args, context) {
   try {
@@ -615,6 +668,9 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'achievement', 'achievement_definition', pick(args, definitionSchema));
     } else if (name === 'propose_reading_record') {
       outcome = await propose(context, 'letterbookxd', 'reading_record', pick(args, readingSchema));
+    } else if (name === 'propose_station_draw') {
+      pick(args ?? {}, { required: [], properties: {} });
+      outcome = await proposeStationDraw(context);
     } else if (name === 'propose_station_visit') {
       outcome = await propose(context, 'sub', 'station_visit', pick(args, stationSchema));
     } else if (name === 'propose_media_progress') {
