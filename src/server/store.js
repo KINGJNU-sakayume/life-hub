@@ -58,3 +58,10 @@ export async function rejectCandidate(db, ownerId, id, at) {
   if (row.status === 'confirmed') throw new StoreFailure(409, 'Confirmed record cannot be rejected');
   return record(row);
 }
+/** Single candidate lookup, owner-scoped and optionally restricted to one source (e.g. what an MCP client may see). */
+export async function getCandidate(db, ownerId, id, source) {
+  const row = source ?
+    await db.prepare('SELECT * FROM inbox WHERE owner_id=? AND id=? AND source=?').bind(ownerId, id, source).first() :
+    await db.prepare('SELECT * FROM inbox WHERE owner_id=? AND id=?').bind(ownerId, id).first();
+  return row ? record(row) : null;
+}

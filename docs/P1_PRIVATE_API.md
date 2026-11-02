@@ -6,6 +6,8 @@ This repository is **public code**. It is **not a public data store**, hosted we
 
 No real person, account, message, photo, backup or API secret belongs in this repository, CI logs, README screenshots, or fixtures.
 
+> P2a adds a separate OAuth-protected MCP endpoint for Claude; see [P2_CLAUDE_CONNECTOR.md](P2_CLAUDE_CONNECTOR.md). The `/v1` API below is unchanged and does not accept OAuth tokens.
+
 P1 intentionally implements **only** candidate creation, owner listing, incremental changes, and owner rejection. No route can mark a candidate confirmed, since there is not yet a trusted PALATE committed-record receipt/ACK protocol. ChatGPT/Claude OAuth or MCP, browser login, automatic delivery, offline outbox, and multi-device synchronization are **not included**.
 
 ## Credential scopes

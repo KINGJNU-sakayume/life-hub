@@ -9,33 +9,37 @@ Life Hub is a private-first routing project for personal websites; it is not a n
 ## Status
 
 - **P0:** storage-independent validated candidate core, [PALATE](https://github.com/KINGJNU-sakayume/food) v1 adapter, and synthetic tests.
-- **P1 (merged):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. **Not deployed yet**; a manual deploy workflow can be run entirely from the web ([docs/DEPLOY_FROM_WEB.md](docs/DEPLOY_FROM_WEB.md)).
-- **P2:** real ChatGPT/Claude provider authorization, browser owner login, PALATE integration with verified receipt and bidirectional retry. **Not implemented.**
+- **P1 (deployed):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. Manual deploy workflow runnable entirely from the web ([docs/DEPLOY_FROM_WEB.md](docs/DEPLOY_FROM_WEB.md)).
+- **P2a (this stage):** Claude custom connector — OAuth 2.1 with owner password and an MCP endpoint whose tools *propose* food candidates into the private inbox ([docs/P2_CLAUDE_CONNECTOR.md](docs/P2_CLAUDE_CONNECTOR.md)).
+- **P2b:** PALATE delivery with verified approval receipt and retry. **Not implemented.**
 
-The API code is **not a working ChatGPT/Claude integration**. It cannot receive normal chat messages automatically or update PALATE records today.
+Claude can propose candidates, but **nothing reaches PALATE automatically yet** and no proposal becomes a record without the owner's approval.
 
 ## Test
 
-Requires Node.js 22+. No application package dependencies.
+Requires Node.js 22+. One runtime dependency: `@cloudflare/workers-oauth-provider` (`npm install`).
 
 ```bash
 npm run check
 ```
 
-Node.js's experimental SQLite API runs the P1 SQL migration in an in-memory database for tests; no Cloudflare account or real data is required.
+Node.js's experimental SQLite API runs the SQL migrations in an in-memory database, and a small hook stubs the Workers runtime so the OAuth flow runs end to end; no Cloudflare account or real data is required.
 
 ## Implementation
 
 - `src/core/candidates.js`: Hub v1 schema and idempotency semantics, in memory.
 - `src/adapters/food.js`: exact translation to PALATE local inbox format, no direct approval.
-- `src/server/worker.js`: initial HTTP Worker routes.
+- `src/server/index.js`: Worker entry; wires OAuth, `/authorize`, `/mcp` and the P1 routes.
+- `src/server/worker.js`: P1 HTTP routes (`/health`, `/v1/*`).
+- `src/auth/owner-login.js`: owner password check, throttle, redirect allowlist, consent page.
+- `src/mcp/protocol.js` + `src/mcp/tools.js`: stateless MCP endpoint and the food proposal tools.
 - `src/server/auth.js`: secret-token roles; identity is never accepted from client JSON.
-- `src/server/store.js` + `migrations/0001_inbox.sql`: D1 candidate storage with SQL uniqueness and append-only change feed.
+- `src/server/store.js` + `migrations/`: D1 candidate storage with SQL uniqueness, append-only change feed, and the login throttle.
 - `docs/P1_PRIVATE_API.md`: setup and security restrictions.
 - `docs/ROADMAP.md`: next stages.
 
 ```
-ChatGPT / Claude --[future authenticated provider tool]--> Life Hub D1 private inbox
+Claude --[MCP + OAuth, P2a]--> Life Hub D1 private inbox
                                                          |
                                          [future authenticated delivery]
                                                          v
