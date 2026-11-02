@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { TestD1 } from '../scripts/node-test/d1.mjs';
 import { handleMcpRequest } from '../src/mcp/protocol.js';
 import { destinationById } from '../src/destinations.js';
+import { putDestinationRefs } from '../src/server/store.js';
 
 const ORIGIN = 'https://hub.example';
 const NOW = Date.parse('2026-11-02T00:00:00Z');
@@ -28,10 +29,11 @@ const call = async (db, name, args, options) => (await rpc(db, 'tools/call', { n
 const statusOf = async (db, id) => (await db.prepare('SELECT status FROM inbox WHERE id=?').bind(id).first()).status;
 const MEAL = { menu_name: 'Synthetic ramen', place_name: 'Fictional shop', eaten_on: '2026-11-02', verdict: 'LIKE' };
 
-async function withApproval(fn) {
-  const card = destinationById('food').card;
-  card.approve = true;
-  try { await fn(); } finally { card.approve = false; }
+async function withApproval(fn, on = true, destination = 'food') {
+  const card = destinationById(destination).card;
+  const before = card.approve;
+  card.approve = on;
+  try { await fn(); } finally { card.approve = before; }
 }
 async function proposed(db, args = MEAL, options) {
   const result = await call(db, 'propose_food_meal', args, options);
@@ -48,8 +50,10 @@ test('tools/list: card tools are app-only and only for a Claude grant with hub:a
     assert.equal(meal._meta.ui.resourceUri, 'ui://life-hub/card-food.html');
     assert.equal(meal._meta['ui/resourceUri'], 'ui://life-hub/card-food.html');
     assert.ok(plain.result.ttlMs <= 300000, 'a deploy must reach open chats within minutes');
-    // Destinations without a card keep a plain tool.
-    assert.equal(plain.result.tools.find((t) => t.name === 'propose_memory')._meta, undefined);
+    // 켜켜이 has a card too; destinations without a card keep a plain tool.
+    assert.equal(plain.result.tools.find((t) => t.name === 'propose_memory')._meta.ui.resourceUri, 'ui://life-hub/card-kyeokyeoi.html');
+    assert.equal(plain.result.tools.find((t) => t.name === 'propose_region_visit')._meta.ui.resourceUri, 'ui://life-hub/card-kyeokyeoi.html');
+    assert.equal(plain.result.tools.find((t) => t.name === 'propose_album_listening')._meta, undefined);
 
     const full = await rpc(db, 'tools/list', {});
     const cards = full.result.tools.filter((t) => t.name.startsWith('card_'));
@@ -66,12 +70,14 @@ test('tools/list: card tools are app-only and only for a Claude grant with hub:a
   } finally { db.close(); }
 });
 
-test('resources: the food card is a small self-contained mcp-app page with no external domains', async () => {
+test('resources: every card is a small self-contained mcp-app page with no external domains', async () => {
   const db = new TestD1();
   try {
     const list = await rpc(db, 'resources/list', {});
-    assert.deepEqual(list.result.resources.map((r) => [r.uri, r.mimeType]), [['ui://life-hub/card-food.html', 'text/html;profile=mcp-app']]);
-    const read = await rpc(db, 'resources/read', { uri: 'ui://life-hub/card-food.html' });
+    assert.deepEqual(list.result.resources.map((r) => [r.uri, r.mimeType]), [
+      ['ui://life-hub/card-food.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-kyeokyeoi.html', 'text/html;profile=mcp-app']]);
+    for (const { uri } of list.result.resources) {
+    const read = await rpc(db, 'resources/read', { uri });
     const [content] = read.result.contents;
     assert.equal(content.mimeType, 'text/html;profile=mcp-app');
     assert.deepEqual(content._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
@@ -84,6 +90,7 @@ test('resources: the food card is a small self-contained mcp-app page with no ex
     assert.match(content.text, /m\.method==='ping'/);
     assert.match(content.text, /-32601/);
     assert.ok(content.text.indexOf("method:'ui/notifications/initialized'") < content.text.indexOf('size();if(window.ResizeObserver)'));
+    }
     assert.equal((await rpc(db, 'resources/list', {}, { source: 'codex' })).error.code, -32601);
   } finally { db.close(); }
 });
@@ -97,7 +104,7 @@ test('propose: the ticket is only in _meta, never in model-visible content or st
     assert.ok(!visible.includes(ticket));
     assert.equal(result._meta['io.modelcontextprotocol/serverInfo'].name, 'life-hub');
     assert.deepEqual(result.structuredContent.card.payload, { menu_name: 'Synthetic ramen', place_name: 'Fictional shop', verdict: 'LIKE', eaten_at: '2026-11-02' });
-    assert.equal(result.structuredContent.card.approve, 'app', 'PALATE does not accept card approval yet');
+    assert.equal(result.structuredContent.card.approve, 'ok', 'PALATE accepts card approval since stage 2');
     assert.equal(result.structuredContent.card.app_url, 'https://apps.example/food/');
     // Only a hash is stored.
     const row = await db.prepare('SELECT * FROM card_tickets WHERE candidate_id=?').bind(id).first();
@@ -113,7 +120,7 @@ test('propose: the ticket is only in _meta, never in model-visible content or st
   } finally { db.close(); }
 });
 
-test('card approval is refused while the destination does not sync approved candidates', async () => {
+test('card approval is refused while the destination does not sync approved candidates', () => withApproval(async () => {
   const db = new TestD1();
   try {
     const { id, ticket } = await proposed(db);
@@ -125,7 +132,7 @@ test('card approval is refused while the destination does not sync approved cand
     const rejected = await call(db, 'card_reject', { candidate_id: id, ticket });
     assert.equal(rejected.structuredContent.card.status, 'rejected');
   } finally { db.close(); }
-});
+}, false));
 
 test('no approval without the right connection, scope and ticket', async () => {
   const db = new TestD1();
@@ -236,5 +243,92 @@ test('every cacheable result carries the 2026-07-28 caching hints', async () => 
       assert.ok(Number.isInteger(result.ttlMs) && result.ttlMs >= 0, method + ' ttlMs');
       assert.equal(result.cacheScope, 'private', method + ' cacheScope');
     }
+  } finally { db.close(); }
+});
+
+/* ---------- Stage 2: 켜켜이 card, refs for the picker, last checks the app still needs ---------- */
+
+const REGIONS = { revision: 1, items: [
+  { id: '31103', label: '경기 고양시 일산서구', group: '경기' }, { id: '11010', label: '서울 종로구', group: '서울' }] };
+async function shareRegions(db) {
+  await putDestinationRefs(db, 'demo-owner', 'kyeokyeoi', 'regions', REGIONS.revision, REGIONS.items, '2026-11-02T00:00:00.000Z');
+}
+async function proposeTo(db, tool, args) {
+  const result = await call(db, tool, args);
+  return { result, id: result.structuredContent.candidate_id, ticket: result._meta?.['life-hub/card']?.ticket };
+}
+
+test('켜켜이 card: the 시군구 list goes only to the card (card_* results), never into the proposal the model sees', async () => {
+  const db = new TestD1();
+  try {
+    await shareRegions(db);
+    const { result, id, ticket } = await proposeTo(db, 'propose_region_visit', { place_text: 'Synthetic park', region_hint: '고양시' });
+    assert.equal(result.structuredContent.card.label, '방문');
+    assert.equal(result.structuredContent.card.approve, 'ok');
+    assert.equal(result.structuredContent.card.refs, undefined);
+    assert.ok(!JSON.stringify(result).includes('종로구'));
+    const refreshed = await call(db, 'card_refresh', { candidate_id: id, ticket });
+    assert.deepEqual(refreshed.structuredContent.card.refs, { regions: REGIONS.items });
+    // Food has no reference kinds.
+    const meal = await proposed(db);
+    const foodRefresh = await call(db, 'card_refresh', { candidate_id: meal.id, ticket: meal.ticket });
+    assert.equal(foodRefresh.structuredContent.card.refs, undefined);
+  } finally { db.close(); }
+});
+
+test('a visit approved with an exact 시군구 is saved by 켜켜이 as is; without one the app is asked to check', async () => {
+  const db = new TestD1();
+  try {
+    await shareRegions(db);
+    const a = await proposeTo(db, 'propose_region_visit', { place_text: 'Synthetic park', region_hint: '고양시' });
+    const edited = await call(db, 'card_edit', { candidate_id: a.id, ticket: a.ticket, revision: 0, payload: { place_text: 'Synthetic park', region_hint: '경기 고양시 일산서구' } });
+    assert.equal(edited.structuredContent.card.payload.region_hint, '경기 고양시 일산서구');
+    const ok = await call(db, 'card_approve', { candidate_id: a.id, ticket: a.ticket, revision: 1 });
+    assert.equal(ok.structuredContent.card.status, 'approved');
+    assert.equal(ok.structuredContent.card.needs_app_review, false);
+
+    // The card did not send app_review, but no exact 시군구: forced last check.
+    const b = await proposeTo(db, 'propose_region_visit', { place_text: 'Synthetic beach' });
+    const forced = await call(db, 'card_approve', { candidate_id: b.id, ticket: b.ticket, revision: 0 });
+    assert.equal(forced.structuredContent.card.needs_app_review, true);
+    // 「켜켜이에서 정할게요」 sends app_review explicitly.
+    const c = await proposeTo(db, 'propose_region_visit', { place_text: 'Synthetic lake', region_hint: '서울 종로구' });
+    const later = await call(db, 'card_approve', { candidate_id: c.id, ticket: c.ticket, revision: 0, app_review: true });
+    assert.equal(later.structuredContent.card.needs_app_review, true);
+  } finally { db.close(); }
+});
+
+test('needsAppReview: memories need no place or an exact one; PALATE meals need date, verdict and reorder intent', async () => {
+  const { needsAppReview } = await import('../src/mcp/tools.js');
+  const refs = { regions: REGIONS.items };
+  assert.equal(needsAppReview('kyeokyeoi', 'memory', { title: 't' }, refs), false);
+  assert.equal(needsAppReview('kyeokyeoi', 'memory', { title: 't', region_hint: '서울 종로구' }, refs), false);
+  assert.equal(needsAppReview('kyeokyeoi', 'memory', { title: 't', region_hint: '종로' }, refs), true);
+  assert.equal(needsAppReview('kyeokyeoi', 'memory', { title: 't', place_text: 'Synthetic cafe' }, refs), true);
+  assert.equal(needsAppReview('kyeokyeoi', 'visit', { place_text: 'x', region_hint: '서울 종로구' }, undefined), true, 'no shared list yet');
+  assert.equal(needsAppReview('food', 'meal', { menu_name: 'm', eaten_at: '2026-11-02', verdict: 'LIKE' }), true);
+  assert.equal(needsAppReview('food', 'meal', { menu_name: 'm', eaten_at: '2026-11-02', verdict: 'LIKE', reorder_intent: 'YES' }), false);
+  assert.equal(needsAppReview('food', 'wish', { wish_kind: 'try_menu', name: 'n' }), false);
+
+  const db = new TestD1();
+  try {
+    const { id, ticket } = await proposed(db); // no reorder intent
+    const r = await call(db, 'card_approve', { candidate_id: id, ticket, revision: 0 });
+    assert.equal(r.structuredContent.card.status, 'approved');
+    assert.equal(r.structuredContent.card.needs_app_review, true);
+  } finally { db.close(); }
+});
+
+test('켜켜이 card edits pass the 켜켜이 contract (dates, emotions) or are refused with no change', async () => {
+  const db = new TestD1();
+  try {
+    const { id, ticket } = await proposeTo(db, 'propose_memory', { title: 'Synthetic concert', place_text: 'Synthetic hall' });
+    const good = await call(db, 'card_edit', { candidate_id: id, ticket, revision: 0,
+      payload: { title: 'Synthetic concert', place_text: 'Synthetic hall', year: 2026, month: 10, day: 8, emotions: ['설렘', '행복'] } });
+    assert.equal(good.structuredContent.card.revision, 1);
+    const bad = await rpc(db, 'tools/call', { name: 'card_edit', arguments: { candidate_id: id, ticket, revision: 1, payload: { title: 'x', emotions: ['not-an-emotion'] } } });
+    assert.ok(bad.error || bad.result.isError);
+    const again = await call(db, 'card_refresh', { candidate_id: id, ticket });
+    assert.deepEqual(again.structuredContent.card.payload.emotions, ['설렘', '행복']);
   } finally { db.close(); }
 });

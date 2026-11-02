@@ -11,7 +11,7 @@
  */
 import { canonical } from '../core/candidates.js';
 import {
-  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate,
+  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate, getDestinationRefs,
   editCardCandidate, approveCardCandidate, rejectCardCandidate,
 } from '../server/store.js';
 import { cardFor } from './cards/index.js';
@@ -306,8 +306,11 @@ export function toolsFor(context) {
   return canUseCards(context) ? [...tools, ...CARD_TOOLS] : tools;
 }
 
-/** What the card renders. Never contains the ticket. */
-function cardView(rec, context) {
+/**
+ * What the card renders. Never contains the ticket. `refs` (the app's reference lists for pickers, e.g.
+ * 켜켜이's 시군구) is passed only for card_* results, which the host gives to the card and not to the model.
+ */
+function cardView(rec, context, refs) {
   const destination = destinationById(rec.destination);
   const card = cardFor(rec.destination);
   return {
@@ -316,7 +319,32 @@ function cardView(rec, context) {
     type: rec.candidate.candidate_type, label: card.labels[rec.candidate.candidate_type] ?? destination.app,
     status: rec.status, revision: rec.revision, payload: finalEnvelope(rec).payload, needs_app_review: rec.needs_app_review,
     approve: !canUseCards(context) ? 'scope' : destination.card?.approve ? 'ok' : 'app',
+    ...(refs ? { refs } : {}),
   };
+}
+
+/** Reference list items by kind, for the card picker (only the kinds the destination declares). */
+async function cardRefs(context, destination) {
+  const kinds = destinationById(destination)?.refKinds ?? [];
+  if (!kinds.length) return undefined;
+  const stored = await getDestinationRefs(context.db, context.ownerId, destination);
+  return Object.fromEntries(kinds.map((k) => [k, stored[k]?.items ?? []]));
+}
+
+/**
+ * Whether the app must still ask the owner, whatever the card sent: approval in the card never saves
+ * something the app cannot save as-is. PALATE needs a meal's date, verdict and reorder intent; 켜켜이
+ * needs a 시군구 that is exactly one of the labels it shared (a visit always, a memory when it has a place).
+ */
+export function needsAppReview(destination, type, payload, refs) {
+  if (destination === 'food' && type === 'meal') return !payload.eaten_at || !payload.verdict || !payload.reorder_intent;
+  if (destination === 'kyeokyeoi') {
+    const labels = new Set((refs?.regions ?? []).map((r) => r.label));
+    const exact = typeof payload.region_hint === 'string' && labels.has(payload.region_hint);
+    if (type === 'visit') return !exact;
+    if (type === 'memory') return payload.region_hint ? !exact : Boolean(payload.place_text);
+  }
+  return false;
 }
 
 function cardPayload(value) {
@@ -336,7 +364,7 @@ async function callCardTool(name, args, context) {
   for (const key of schema.required) if (args[key] === undefined) throw new ToolInputError(`Missing required field: ${key}.`);
   if (!/^[0-9a-f-]{36}$/.test(args.candidate_id)) throw new ToolInputError('Invalid candidate_id.');
   if ('revision' in schema.properties && (!Number.isInteger(args.revision) || args.revision < 0)) throw new ToolInputError('Invalid revision.');
-  const card = async (rec, text) => ({ content: [{ type: 'text', text }], structuredContent: { card: cardView(rec, context) } });
+  const card = async (rec, text) => ({ content: [{ type: 'text', text }], structuredContent: { card: cardView(rec, context, await cardRefs(context, rec.destination)) } });
   const { db, ownerId } = context;
   try {
     if (name === 'card_refresh') {
@@ -353,7 +381,8 @@ async function callCardTool(name, args, context) {
       const current = await readCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);
       if (!destinationById(current.destination)?.card?.approve)
         throw new ToolInputError(`${appName(current.destination)} does not accept card approval yet; review it in the app.`);
-      const rec = await approveCardCandidate(db, ownerId, args.candidate_id, args.ticket, args.revision, { appReview: args.app_review === true }, at);
+      const forced = needsAppReview(current.destination, current.candidate.candidate_type, finalEnvelope(current).payload, await cardRefs(context, current.destination));
+      const rec = await approveCardCandidate(db, ownerId, args.candidate_id, args.ticket, args.revision, { appReview: args.app_review === true || forced }, at);
       return card(rec, `The owner approved it in the card. ${appName(rec.destination)} saves it the next time it syncs; it is not saved yet.`);
     }
     const rec = await rejectCardCandidate(db, ownerId, args.candidate_id, args.ticket, at);

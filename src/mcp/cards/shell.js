@@ -47,12 +47,14 @@ button{font:inherit}
 :focus-visible{outline:2px solid var(--pri);outline-offset:2px}
 .field{display:flex;flex-direction:column;gap:6px}.lbl{font-size:12px;font-weight:600;color:var(--ink2)}.opt{font-weight:500;color:var(--mute)}
 #ef{display:flex;flex-direction:column;gap:14px}
-.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.two,.three{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.three{grid-template-columns:2fr 1fr 1fr}
 input,textarea{min-height:44px;width:100%;border:1px solid var(--field);border-radius:10px;padding:0 12px;font:inherit;font-size:15px;color:var(--ink);background:var(--card)}
 textarea{min-height:76px;padding:10px 12px;resize:vertical}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--field);background:var(--card);color:var(--ink2);cursor:pointer}
 .chip[aria-pressed=true]{border-color:var(--chip-on);background:var(--chip-on);color:var(--chip-on-ink);font-weight:600}
+.pick{display:flex;flex-direction:column;gap:8px}.pick .sel{margin:0;font-size:13px;color:var(--mute)}.pick .sel b{color:var(--ink)}
+.plist{display:flex;flex-wrap:wrap;gap:6px;max-height:176px;overflow:auto}
 .confirm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--err);border-radius:10px}
 .confirm p{margin:0;flex:1 1 180px;font-weight:600;color:var(--err-ink)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -60,7 +62,11 @@ textarea{min-height:76px;padding:10px 12px;resize:vertical}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 `;
 
-/* Runs inside the card iframe. `B` is the destination body: { view(c, h), edit(c, h), read(form) → payload }. */
+/*
+ * Runs inside the card iframe. `B` is the destination body: { view(c, h), edit(c, h), read(values, c) → payload | error text }
+ * and optionally bind(form, c, h) (wire dynamic parts of the edit form, e.g. a picker) and preApprove(c, h) → null |
+ * { message, later } (something the app would still ask: offer 「수정」 or approve with a last check in the app).
+ */
 const RUNTIME = String.raw`
 (function(){
 'use strict';
@@ -79,8 +85,9 @@ var H={esc:esc,
   input:function(name,label,value,o){o=o||{};var id='f-'+name;return '<div class="field"><label class="lbl" for="'+id+'">'+esc(label)+(o.optional?' <span class="opt">선택</span>':'')+'</label>'+
     (o.area?'<textarea id="'+id+'" name="'+name+'" maxlength="'+(o.max||1000)+'">'+esc(value)+'</textarea>':
     '<input id="'+id+'" name="'+name+'" type="'+(o.type||'text')+'" value="'+esc(value)+'" maxlength="'+(o.max||200)+'"'+(o.optional?'':' required')+'>')+'</div>';},
-  chips:function(name,label,options,value,o){o=o||{};return '<div class="field"><span class="lbl" id="l-'+name+'">'+esc(label)+(o.required?'':' <span class="opt">선택</span>')+'</span><div class="chips" role="group" aria-labelledby="l-'+name+'" data-chips="'+name+'"'+(o.required?' data-required="1"':'')+'>'+
-    options.map(function(x){return '<button type="button" class="chip" data-value="'+esc(x[0])+'" aria-pressed="'+(x[0]===value)+'">'+esc(x[1])+'</button>';}).join('')+'</div></div>';}
+  chips:function(name,label,options,value,o){o=o||{};var on=function(v){return o.multi?(value||[]).indexOf(v)>=0:v===value;};
+    return '<div class="field"><span class="lbl" id="l-'+name+'">'+esc(label)+(o.required?'':' <span class="opt">선택</span>')+'</span><div class="chips" role="group" aria-labelledby="l-'+name+'" data-chips="'+name+'"'+(o.required?' data-required="1"':'')+(o.multi?' data-multi="'+o.multi+'"':'')+'>'+
+    options.map(function(x){return '<button type="button" class="chip" data-value="'+esc(x[0])+'" aria-pressed="'+on(x[0])+'">'+esc(x[1])+'</button>';}).join('')+'</div></div>';}
 };
 var PILL={pending:['검토 대기','p-wait'],edited:['수정함','p-edit'],editing:['수정 중','p-edit'],busy:['처리 중…','p-edit'],approved:['승인됨','p-ok'],review:['확인 필요','p-warn'],
   confirmed:['저장됨','p-done'],rejected:['거절됨','p-off'],error:['다시 확인','p-err']};
@@ -89,6 +96,7 @@ function pill(){var c=S.card;if(S.error)return PILL.error;if(S.busy)return PILL.
 function appLink(text){return S.card.app_url?'<button type="button" class="link" data-act="open">'+esc(text||S.card.app+' 열기')+'</button>':'';}
 function footer(){var c=S.card,a=esc(c.app);
   if(S.mode==='edit')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><span class="grow"></span><button type="button" class="btn pri" data-act="save"'+(S.busy?' disabled':'')+'>변경 반영</button></div>';
+  if(S.mode==='pre')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="link" data-act="later">'+esc(S.pre.later)+'</button><span class="grow"></span><button type="button" class="btn pri" data-act="edit">수정</button></div>';
   if(S.mode==='confirm')return '<div class="confirm" role="alertdialog" aria-label="거절 확인"><p>거절할까요? '+a+'에 저장되지 않아요.</p><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="btn danger" data-act="reject">거절하기</button></div>';
   if(c.status==='approved')return '<div class="foot"><p class="fl">'+(c.needs_app_review?'승인했어요. '+a+'를 열면 한 번 더 확인해요. ':'다음에 '+a+'를 열면 자동으로 저장돼요. ')+appLink()+'</p></div>';
   if(c.status==='confirmed')return '<div class="foot"><p class="fl">'+a+'에 저장했어요.</p></div>';
@@ -103,6 +111,7 @@ function callout(){var c=S.card;
   if(S.error==='expired')return '<p class="callout c-err" role="alert">이 카드는 만료됐어요.</p>';
   if(S.error==='conflict')return '<p class="callout c-err" role="alert">다른 곳에서 먼저 바뀌었어요. 최신 내용을 불러와 다시 확인해 주세요.</p>';
   if(S.error)return '<p class="callout c-err" role="alert">'+esc(S.error)+'</p>';
+  if(S.mode==='pre')return '<p class="callout c-info" role="status">'+esc(S.pre.message)+'</p>';
   if(c.status==='pending'&&c.approve==='scope')return '<p class="callout c-info">여기서 승인하려면 Claude 설정에서 Life Hub를 다시 연결하고 「카드에서 승인도 허용」을 켜 주세요.</p>';
   return '';}
 function render(){
@@ -110,6 +119,7 @@ function render(){
   var c=S.card,p=pill();
   root.innerHTML='<section class="card'+(c.status==='rejected'?' off':'')+'" aria-label="'+esc(c.label)+' 후보"><div class="head"><span class="eyebrow">'+esc(c.label)+' <span class="app">· '+esc(c.app)+'</span></span><span class="pill '+p[1]+'">'+p[0]+'</span></div>'+
     (S.mode==='edit'?'<form id="ef" novalidate>'+B.edit(c,H)+'</form>':B.view(c,H))+callout()+footer()+'</section><p class="sr" role="status" aria-live="polite">'+esc(S.live)+'</p>';
+  if(S.mode==='edit'&&B.bind)B.bind(root.querySelector('#ef'),c,H);
 }
 function take(result){
   if(!result)return;
@@ -126,19 +136,23 @@ function act(name,args,live){
 }
 root.addEventListener('click',function(e){
   var chip=e.target.closest('.chip');
-  if(chip){var g=chip.parentNode,on=chip.getAttribute('aria-pressed')==='true';if(on&&g.dataset.required)return;
+  if(chip){var g=chip.parentNode,on=chip.getAttribute('aria-pressed')==='true';
+    if(g.dataset.multi){if(!on&&g.querySelectorAll('[aria-pressed=true]').length>=Number(g.dataset.multi))return;chip.setAttribute('aria-pressed',String(!on));return;}
+    if(on&&g.dataset.required)return;
     g.querySelectorAll('.chip').forEach(function(x){x.setAttribute('aria-pressed','false');});if(!on)chip.setAttribute('aria-pressed','true');return;}
   var b=e.target.closest('[data-act]');if(!b)return;var a=b.dataset.act;
   if(a==='edit'){S.mode='edit';render();var f=root.querySelector('input,textarea');if(f)f.focus();}
   else if(a==='cancel'){S.mode='view';S.error=null;render();}
   else if(a==='ask'){S.mode='confirm';render();}
   else if(a==='reject')act('card_reject',{},'거절했어요.');
-  else if(a==='approve')act('card_approve',{revision:S.card.revision},'승인했어요.');
+  else if(a==='approve'){var pre=B.preApprove&&B.preApprove(S.card,H);if(pre){S.mode='pre';S.pre=pre;render();return;}act('card_approve',{revision:S.card.revision},'승인했어요.');}
+  else if(a==='later')act('card_approve',{revision:S.card.revision,app_review:true},'승인했어요. 앱에서 한 번 더 확인해요.');
   else if(a==='refresh')act('card_refresh',{},'최신 내용을 불러왔어요.');
   else if(a==='open'&&S.card.app_url)request('ui/open-link',{url:S.card.app_url}).catch(function(){});
   else if(a==='save'){var f=root.querySelector('#ef'),v={};
-    f.querySelectorAll('input,textarea').forEach(function(x){v[x.name]=x.value.trim();});
-    f.querySelectorAll('[data-chips]').forEach(function(g){var on=g.querySelector('[aria-pressed=true]');v[g.dataset.chips]=on?on.dataset.value:'';});
+    f.querySelectorAll('input[name],textarea[name]').forEach(function(x){v[x.name]=x.value.trim();});
+    f.querySelectorAll('[data-chips]').forEach(function(g){var on=g.querySelectorAll('[aria-pressed=true]');
+      v[g.dataset.chips]=g.dataset.multi?[].map.call(on,function(x){return x.dataset.value;}):(on[0]?on[0].dataset.value:'');});
     var payload=B.read(v,S.card);if(typeof payload==='string'){S.error=payload;render();return;}
     S.mode='view';act('card_edit',{revision:S.card.revision,payload:payload},'수정했어요.');}
 });
@@ -183,11 +197,14 @@ connect();
 })();
 `;
 
+/** Leading indentation and comment-only lines are dropped (the scripts have no multi-line string literals). */
+const compact = (code) => code.replace(/\n\s*\/\/[^\n]*/g, '').replace(/\n\s+/g, '\n');
+
 /** A complete card document: shared shell + one destination body script. */
 export function cardDocument(title, bodyScript) {
   return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     `<title>${title}</title><style>${CSS}</style></head><body><div id="root"></div>` +
-    `<script>${bodyScript}</script><script>${RUNTIME}</script></body></html>`;
+    `<script>${compact(bodyScript)}</script><script>${compact(RUNTIME)}</script></body></html>`;
 }
 
 /** Resource `_meta.ui`: no external domains at all; the host draws no extra border (the card has its own). */

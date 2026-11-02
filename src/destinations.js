@@ -21,13 +21,15 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'food', app: 'PALATE', role: 'palate', path: '/palate', scope: 'food:inbox', legacyProposeScope: 'food:propose',
     redirectVar: 'HUB_PALATE_REDIRECT_URI', types: ['meal', 'wish'], adapter: toFoodCandidate, label: 'PALATE',
-    // Conversation card (src/mcp/cards). approve stays false until PALATE syncs `approved` candidates.
-    card: { approve: false },
+    // Conversation card (src/mcp/cards). PALATE saves `approved` candidates since its stage-2 release.
+    card: { approve: true },
     grants: 'Life Hub 수신함의 <strong>음식 후보를 가져오고</strong>, PALATE에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'kyeokyeoi', app: '켜켜이', role: 'kyeokyeoi', path: '/kyeokyeoi', scope: 'kyeokyeoi:inbox', legacyProposeScope: 'kyeokyeoi:propose',
     redirectVar: 'HUB_KYEOKYEOI_REDIRECT_URI', types: ['memory', 'visit'], adapter: toKyeokyeoiCandidate, label: 'kyeokyeoi',
+    // Conversation card; 켜켜이 saves `approved` candidates since its stage-2 release.
+    card: { approve: true },
     // Reference lists the app may publish for card pickers (PUT /kyeokyeoi/v1/refs/<kind>).
     refKinds: ['regions'],
     grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
