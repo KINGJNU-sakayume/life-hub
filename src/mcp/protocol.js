@@ -107,12 +107,14 @@ export async function handleMcpRequest(request, context) {
       return ok({ tools: isChatgpt ? TOOLS : TOOLS.filter((t) => t.name !== 'preview_reading_record'),
         ttlMs: 3600000, cacheScope: 'private' });
     case 'resources/list':
-      return ok({ resources: isChatgpt ? [{
+      if (!isChatgpt) return notFound();
+      return ok({ resources: [{
         uri: READING_PREVIEW_URI, name: 'reading-preview', title: 'Reading record preview',
         mimeType: 'text/html;profile=mcp-app',
-      }] : [] });
+      }] });
     case 'resources/read':
-      if (!isChatgpt || params.uri !== READING_PREVIEW_URI) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
+      if (!isChatgpt) return notFound();
+      if (params.uri !== READING_PREVIEW_URI) return rpcError(era === 'modern' ? 404 : 200, id, -32002, 'Resource not found');
       return ok({ contents: [{
         uri: READING_PREVIEW_URI, mimeType: 'text/html;profile=mcp-app', text: READING_PREVIEW_HTML,
       }] });
