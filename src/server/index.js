@@ -2,7 +2,7 @@
  * Worker entry point.
  *
  * One OAuth authorization server, one protected resource per client, plus the P1 API:
- * - /mcp/*                    Claude/Codex connector (MCP), scope hub:propose
+ * - /mcp/*                    Claude/Codex/ChatGPT connectors (MCP), scope hub:propose
  * - /<app path>/*             each destination app's inbox API (src/destinations.js), e.g.
  *                             /palate (food:inbox), /kyeokyeoi, /potcast, /achievement
  * - /authorize                owner password + consent page (ours)
@@ -48,7 +48,7 @@ export const mcpHandler = {
   async fetch(request, env, ctx) {
     // Grants from before hub:propose carry the per-destination scopes; tools check the specific one.
     const role = ctx.props?.role;
-    if (role !== 'claude' && role !== 'codex') return forbidden();
+    if (!['claude', 'codex', 'chatgpt'].includes(role)) return forbidden();
     return guard(env, ctx, role, [SCOPES.HUB_PROPOSE, SCOPES.PROPOSE, SCOPES.KYEOKYEOI_PROPOSE]) ?? handleMcpRequest(request, {
       db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), source: role,
       allowedOrigins: [env.HUB_PUBLIC_ORIGIN, role === 'claude' ? 'https://claude.ai' : 'https://chatgpt.com'],
@@ -85,12 +85,12 @@ export function createServers(origin) {
     // CIMD (Claude may use it; the destination apps do) needs the global_fetch_strictly_public flag. DCR is the fallback.
     clientIdMetadataDocumentEnabled: true,
     scopesSupported: [...ALL_SCOPES],
-    // DCR accepts one approved callback per client. Never permit mixed Claude/Codex callbacks.
+    // DCR accepts one approved callback per client. Never permit mixed MCP client callbacks.
     // Destination apps use their own CIMD documents, not DCR.
     clientRegistrationCallback: ({ clientMetadata }) => {
       const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
       if (uris.length !== 1 || !isAllowedMcpCallback(uris[0]))
-        return { code: 'invalid_redirect_uri', description: 'Only approved Claude or Codex callbacks may register', status: 400 };
+        return { code: 'invalid_redirect_uri', description: 'Only approved Claude, Codex or ChatGPT callbacks may register', status: 400 };
     },
     onError: ({ status, code }) => { if (status >= 500) console.warn('oauth error', status, code); },
   });
