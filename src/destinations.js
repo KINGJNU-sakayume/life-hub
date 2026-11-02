@@ -42,8 +42,12 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'achievement', app: '업적 라이브러리', role: 'achievement', path: '/achievement', scope: 'achievement:inbox',
-    redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', types: ['activity_record'], adapter: toAchievementCandidate, label: 'achievement',
-    grants: 'Life Hub 수신함의 <strong>활동 기록 후보를 가져오고</strong>, 업적 라이브러리에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+    redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', types: ['activity_record', 'achievement_definition'], adapter: toAchievementCandidate, label: 'achievement',
+    // Record/achievement card; the app saves `approved` items since its stage-4 release.
+    card: { approve: true },
+    // The owner's category tree (ids, names, top-level group) for the card's category picker.
+    refKinds: ['categories'],
+    grants: 'Life Hub 수신함의 <strong>활동 기록·새 업적 후보를 가져오고</strong>, 카테고리 이름 목록을 공유하고, 업적 라이브러리에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'letterbookxd', app: '책장', role: 'letterbookxd', path: '/letterbookxd', scope: 'letterbookxd:inbox',

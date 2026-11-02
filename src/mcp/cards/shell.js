@@ -20,7 +20,7 @@ const CSS = `
 --warn:#3a2c12;--warn-ink:#f2c879;--err:#3d1f1d;--err-ink:#f2a49b;--info:#22283a;--info-ink:#c7d0ee;--field:#43464c}
 *{box-sizing:border-box}
 html,body{margin:0;background:transparent}
-body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;color:var(--ink)}
 .card{max-width:560px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px 12px;display:flex;flex-direction:column;gap:14px}
 .head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .eyebrow{font-size:12px;font-weight:600;color:var(--ink2)}.app{color:var(--mute);font-weight:500}
@@ -71,7 +71,6 @@ textarea{min-height:76px;padding:10px 12px;resize:vertical}
  */
 const RUNTIME = String.raw`
 (function(){
-'use strict';
 var B=window.LH_BODY, root=document.getElementById('root');
 var S={card:null,ticket:null,mode:'view',busy:false,error:null,live:''};
 var seq=0, waiting={};
@@ -95,21 +94,23 @@ var PILL={pending:['검토 대기','p-wait'],edited:['수정함','p-edit'],editi
   confirmed:['저장됨','p-done'],rejected:['거절됨','p-off'],error:['다시 확인','p-err'],drawn:['오늘의 미션','p-ok']};
 function pill(){var c=S.card;if(S.error)return PILL.error;if(S.busy)return PILL.busy;if(S.mode==='edit')return PILL.editing;
   if(c.status==='pending')return c.revision>0?PILL.edited:PILL.pending;if(c.status==='approved')return c.needs_app_review?PILL.review:PILL.approved;return PILL[c.status]||PILL.pending;}
-function appLink(text,path){return S.card.app_url?'<button type="button" class="link" data-act="open"'+(path?' data-path="'+esc(path)+'"':'')+'>'+esc(text||S.card.app+' 열기')+'</button>':'';}
-function footer(){var c=S.card,a=esc(c.app);
-  if(S.mode==='edit')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><span class="grow"></span><button type="button" class="btn pri" data-act="save"'+(S.busy?' disabled':'')+'>변경 반영</button></div>';
-  if(S.mode==='pre')return '<div class="foot"><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="link" data-act="later">'+esc(S.pre.later)+'</button><span class="grow"></span><button type="button" class="btn pri" data-act="edit">수정</button></div>';
-  if(S.mode==='confirm')return '<div class="confirm" role="alertdialog" aria-label="거절 확인"><p>거절할까요? '+a+'에 저장되지 않아요.</p><button type="button" class="link" data-act="cancel">취소</button><button type="button" class="btn danger" data-act="reject">거절하기</button></div>';
+function bt(cls,act,txt,x){return '<button type="button" class="'+cls+'" data-act="'+act+'"'+(x||'')+'>'+txt+'</button>';}
+function fl(t){return '<div class="foot"><p class="fl">'+t+'</p></div>';}
+function appLink(text,path){return S.card.app_url?bt('link','open',esc(text||S.card.app+' 열기'),path?' data-path="'+esc(path)+'"':''):'';}
+var GROW='<span class="grow"></span>';
+function footer(){var c=S.card,a=esc(c.app),dis=S.busy?' disabled':'';
+  if(S.mode==='edit')return '<div class="foot">'+bt('link','cancel','취소')+GROW+bt('btn pri','save','변경 반영',dis)+'</div>';
+  if(S.mode==='pre')return '<div class="foot">'+bt('link','cancel','취소')+bt('link','later',esc(S.pre.later))+GROW+bt('btn pri','edit','수정')+'</div>';
+  if(S.mode==='confirm')return '<div class="confirm" role="alertdialog" aria-label="거절 확인"><p>거절할까요? '+a+'에 저장되지 않아요.</p>'+bt('link','cancel','취소')+bt('btn danger','reject','거절하기')+'</div>';
   if(B.foot){var own=B.foot(c,H);if(own!=null)return own;}
-  if(c.status==='approved')return '<div class="foot"><p class="fl">'+(c.needs_app_review?'승인했어요. '+a+'를 열면 한 번 더 확인해요. ':'다음에 '+a+'를 열면 자동으로 저장돼요. ')+appLink()+'</p></div>';
-  if(c.status==='confirmed')return '<div class="foot"><p class="fl">'+a+'에 저장했어요.</p></div>';
-  if(c.status==='rejected')return '<div class="foot"><p class="fl">'+a+'에 저장되지 않아요.</p></div>';
-  if(S.error==='expired'||!S.ticket||c.approve==='scope')return '<div class="foot"><p class="fl">지금은 '+appLink(a+'에서 검토')+'할 수 있어요.</p></div>';
-  if(S.error==='conflict')return '<div class="foot"><span class="grow"></span><button type="button" class="btn" data-act="refresh">새로 고침</button></div>';
-  var dis=S.busy?' disabled':'';
-  var edit=B.noEdit?'':'<button type="button" class="btn" data-act="edit"'+dis+'>수정</button>';
-  var right=c.approve==='ok'?edit+'<button type="button" class="btn pri" data-act="approve"'+dis+'>'+(S.busy?'처리 중…':(B.approveLabel||'승인'))+'</button>':edit;
-  return (c.approve==='ok'?'':'<p class="line">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot"><button type="button" class="link" data-act="ask"'+dis+'>거절</button><span class="grow"></span>'+right+'</div>';}
+  if(c.status==='approved')return fl((c.needs_app_review?'승인했어요. '+a+'를 열면 한 번 더 확인해요. ':'다음에 '+a+'를 열면 자동으로 저장돼요. ')+appLink());
+  if(c.status==='confirmed')return fl(a+'에 저장했어요.');
+  if(c.status==='rejected')return fl(a+'에 저장되지 않아요.');
+  if(S.error==='expired'||!S.ticket||c.approve==='scope')return fl('지금은 '+appLink(a+'에서 검토')+'할 수 있어요.');
+  if(S.error==='conflict')return '<div class="foot">'+GROW+bt('btn','refresh','새로 고침')+'</div>';
+  var edit=B.noEdit?'':bt('btn','edit','수정',dis);
+  var right=c.approve==='ok'?edit+bt('btn pri','approve',S.busy?'처리 중…':(B.approveLabel||'승인'),dis):edit;
+  return (c.approve==='ok'?'':'<p class="line">승인은 앱에서 해요. '+appLink()+'</p>')+'<div class="foot">'+bt('link','ask','거절',dis)+GROW+right+'</div>';}
 function callout(){var c=S.card;
   if(S.error==='expired')return '<p class="callout c-err" role="alert">이 카드는 만료됐어요.</p>';
   if(S.error==='conflict')return '<p class="callout c-err" role="alert">다른 곳에서 먼저 바뀌었어요. 최신 내용을 불러와 다시 확인해 주세요.</p>';
@@ -174,7 +175,7 @@ window.addEventListener('message',function(e){
   // A request from the host: always answer (hosts check liveness with ping).
   if(m.id!=null){
     if(m.method==='ping'||m.method==='ui/resource-teardown')answer(m.id,{});
-    else answer(m.id,null,{code:-32601,message:'Method not found: '+m.method});
+    else answer(m.id,null,{code:-32601,message:'Method not found'});
     return;}
   // Notifications.
   if(m.method==='ui/notifications/tool-result'){if(ready)onToolResult(m.params);else queued=m.params;}
@@ -203,12 +204,14 @@ connect();
 `;
 
 /** Leading indentation and comment-only lines are dropped (the scripts have no multi-line string literals). */
-const compact = (code) => code.replace(/\n\s*\/\/[^\n]*/g, '').replace(/\n\s+/g, '\n');
+const compact = (code) => code.replace(/\n\s*\/\/[^\n]*/g, '').replace(/\n\s+/g, '\n')
+  // A line ending (or the next one starting) with a continuation character cannot rely on ASI: join them.
+  .replace(/([{;,(+:?&|=])\n/g, '$1').replace(/\n([})\]+,.?:])/g, '$1');
 
 /** A complete card document: shared shell + one destination body script (+ optional body styles). */
 export function cardDocument(title, bodyScript, bodyCss = '') {
   return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-    `<title>${title}</title><style>${CSS}${bodyCss}</style></head><body><div id="root"></div>` +
+    `<title>${title}</title><style>${(CSS + bodyCss).replace(/\n/g, '')}</style></head><body><div id="root"></div>` +
     `<script>${compact(bodyScript)}</script><script>${compact(RUNTIME)}</script></body></html>`;
 }
 

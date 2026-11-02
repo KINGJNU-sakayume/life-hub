@@ -7,6 +7,12 @@
  *   matches it against the owner's own category tree, and the owner picks when it is not exact.
  * - `value`/`unit` only when the user gave an amount ("5km", "30분", "1만원"); the app converts units.
  * - No photos, no achievement IDs, no category IDs from the assistant.
+ *
+ * `achievement_definition` (cards stage 4): a custom achievement the user asked for ("러닝 누적 100km 업적 만들어줘").
+ * Flat fields so a card can edit them: `title`, optional `description`, optional `category` (name, matched like
+ * records; none = every record counts), `tier`, and one condition: `count` (records, `target`), `total`
+ * (cumulative `target` in `unit`), `streak` (consecutive days, `target`), `tag` (one record tagged `tag`) or
+ * `tag_count` (`target` records tagged `tag`). The app maps them onto its own condition types.
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
@@ -27,13 +33,33 @@ function validRecord(p) {
   return true;
 }
 
+export const TIERS = Object.freeze(['bronze', 'silver', 'gold', 'platinum', 'diamond']);
+export const CONDITION_TYPES = Object.freeze(['count', 'total', 'streak', 'tag', 'tag_count']);
+const whole = (v) => Number.isInteger(v) && v >= 1 && v <= 100000;
+
+function validDefinition(p) {
+  if (!hasOnly(p, ['title', 'description', 'category', 'tier', 'condition_type', 'target', 'unit', 'tag']) ||
+    !requiredText(p.title, 40) || !optionalText(p.description, 200) || !optionalText(p.category, 60) ||
+    !TIERS.includes(p.tier) || !CONDITION_TYPES.includes(p.condition_type) || !optionalText(p.unit, 20) || !optionalText(p.tag, 30))
+    return false;
+  const t = p.condition_type;
+  if (t === 'total') return typeof p.target === 'number' && Number.isFinite(p.target) && p.target > 0 && p.target <= 1e9 && p.unit !== undefined && p.tag === undefined;
+  if (p.unit !== undefined) return false;
+  if (t === 'tag') return p.tag !== undefined && p.target === undefined;
+  if (t === 'tag_count') return p.tag !== undefined && whole(p.target);
+  return p.tag === undefined && whole(p.target); // count, streak
+}
+
 export function validateAchievementCandidate(candidate) {
   if (!isObject(candidate) || !hasOnly(candidate, [
     'schema_version', 'source', 'source_ref', 'idempotency_key', 'created_at', 'candidate_type', 'payload',
   ]) || candidate.schema_version !== 1 || !SOURCES.has(candidate.source) || !isObject(candidate.payload))
     throw new Error('Invalid achievement candidate');
-  if (candidate.candidate_type !== 'activity_record') throw new Error('Unsupported achievement candidate type');
-  if (!validRecord(candidate.payload)) throw new Error('Invalid achievement activity_record candidate');
+  if (candidate.candidate_type === 'activity_record') {
+    if (!validRecord(candidate.payload)) throw new Error('Invalid achievement activity_record candidate');
+  } else if (candidate.candidate_type === 'achievement_definition') {
+    if (!validDefinition(candidate.payload)) throw new Error('Invalid achievement achievement_definition candidate');
+  } else throw new Error('Unsupported achievement candidate type');
   return structuredClone(candidate);
 }
 
