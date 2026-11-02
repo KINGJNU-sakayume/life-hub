@@ -21,6 +21,8 @@ All tokens must be distinct, randomly generated, at least 32 characters, using l
 
 ## Before local development
 
+> No local computer? See [DEPLOY_FROM_WEB.md](DEPLOY_FROM_WEB.md) for a browser-only path using the manual GitHub Actions deploy workflow.
+
 1. Copy `wrangler.example.jsonc` to ignored `wrangler.jsonc` and use your actual D1 database ID later. Never commit secrets or real candidate data. Wrangler is a **separate CLI**: install it using the current Cloudflare instructions rather than introducing it as an application dependency.
 2. Configure local-only `.dev.vars` with the five names above (you can leave provider/read-only tokens unset until their integrations are ready). Use **synthetic fixtures only**.
 3. For a real account, authenticate with Cloudflare then create the D1 database:

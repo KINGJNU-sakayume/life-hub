@@ -9,7 +9,7 @@ Life Hub is a private-first routing project for personal websites; it is not a n
 ## Status
 
 - **P0:** storage-independent validated candidate core, [PALATE](https://github.com/KINGJNU-sakayume/food) v1 adapter, and synthetic tests.
-- **P1 (proposed PR):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. **Not deployed.**
+- **P1 (merged):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. **Not deployed yet**; a manual deploy workflow can be run entirely from the web ([docs/DEPLOY_FROM_WEB.md](docs/DEPLOY_FROM_WEB.md)).
 - **P2:** real ChatGPT/Claude provider authorization, browser owner login, PALATE integration with verified receipt and bidirectional retry. **Not implemented.**
 
 The API code is **not a working ChatGPT/Claude integration**. It cannot receive normal chat messages automatically or update PALATE records today.
