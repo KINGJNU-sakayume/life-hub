@@ -2,7 +2,7 @@
 
 **One chat entry point, multiple independent personal archives.**
 
-Life Hub is a private-first routing project for personal websites; it is not a new dashboard. ChatGPT/Claude may propose structured records, and each destination remains responsible for confirmed writes.
+Life Hub is a private-first routing project for personal websites; it is not a new dashboard. ChatGPT/Claude/Codex may propose structured records, and each destination remains responsible for confirmed writes.
 
 > **Public repo:** Source code, documentation, and **fictional fixtures only**. Do not commit real personal records, diaries, chat transcripts, photos, token values, database files, or backups.
 
@@ -12,9 +12,10 @@ Life Hub is a private-first routing project for personal websites; it is not a n
 - **P1 (deployed):** Cloudflare Worker/D1 implementation with server-only role-scoped opaque keys, atomic uniqueness, durable candidate events, owner listing and rejection. Manual deploy workflow runnable entirely from the web ([docs/DEPLOY_FROM_WEB.md](docs/DEPLOY_FROM_WEB.md)).
 - **P2a (this stage):** Claude custom connector — OAuth 2.1 with owner password and an MCP endpoint whose tools *propose* food candidates into the private inbox ([docs/P2_CLAUDE_CONNECTOR.md](docs/P2_CLAUDE_CONNECTOR.md)).
 - **P2b (deployed):** PALATE pulls pending food candidates and reports approval receipts and rejections back, with the same owner sign-in ([docs/P2B_PALATE.md](docs/P2B_PALATE.md)).
+- **P4 (server implementation, destination changes pending):** Codex CLI/IDE as a separately authenticated MCP producer (OAuth + PKCE, `source: codex`) using the existing proposal tools ([docs/P4_CODEX_CONNECTOR.md](docs/P4_CODEX_CONNECTOR.md)).
 - **P3:** 켜켜이 memories and region visits ([docs/P3_KYEOKYEOI.md](docs/P3_KYEOKYEOI.md)); potcast album listening from conversation or the Spotify history file ([docs/P3_POTCAST.md](docs/P3_POTCAST.md)); 업적 라이브러리 activity records ([docs/P3_ACHIEVEMENT.md](docs/P3_ACHIEVEMENT.md)); 책장 reading records ([docs/P3_LETTERBOOKXD.md](docs/P3_LETTERBOOKXD.md)); 역 도장깨기 station stamps ([docs/P3_SUB.md](docs/P3_SUB.md)); AniMan anime/manga progress ([docs/P3_ANIMAN.md](docs/P3_ANIMAN.md)). Destination apps are declared in one registry, `src/destinations.js`.
 
-No proposal becomes a record without the owner's approval in PALATE.
+No proposal becomes a record without the owner's approval in its destination app.
 
 ## Test
 
@@ -34,15 +35,15 @@ Node.js's experimental SQLite API runs the SQL migrations in an in-memory databa
 - `src/server/worker.js`: P1 HTTP routes (`/health`, `/v1/*`).
 - `src/auth/owner-login.js`: owner password check, throttle, redirect allowlist, consent page.
 - `src/mcp/protocol.js` + `src/mcp/tools.js`: stateless MCP endpoint and the food proposal tools.
-- `src/auth/clients.js`: client profiles (Claude, PALATE): redirect URI → scope + resource.
-- `src/palate/api.js`: PALATE inbox API (list, receipts, rejections).
+- `src/auth/clients.js`: client profiles (Claude, Codex loopback, destination apps): redirect URI → scope + resource.
+- `src/inbox/api.js`: destination inbox API (list, receipts, rejections).
 - `src/server/auth.js`: secret-token roles; identity is never accepted from client JSON.
 - `src/server/store.js` + `migrations/`: D1 candidate storage with SQL uniqueness, append-only change feed, and the login throttle.
 - `docs/P1_PRIVATE_API.md`: setup and security restrictions.
 - `docs/ROADMAP.md`: next stages.
 
 ```
-Claude --[MCP + OAuth, P2a]--> Life Hub D1 private inbox
+Claude/Codex --[MCP + OAuth]--> Life Hub D1 private inbox
                                                          |
                                    [PALATE pull + receipts, P2b]
                                                          v

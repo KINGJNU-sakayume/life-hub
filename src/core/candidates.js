@@ -7,7 +7,7 @@
  * authorization, and explicit destination receipts at the persistence layer.
  */
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 const DESTINATIONS = new Set(['food', 'kyeokyeoi', 'potcast', 'achievement', 'letterbookxd', 'sub', 'animan']);
 const KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const SOURCE_REF = /^[A-Za-z0-9_.:-]{1,200}$/;

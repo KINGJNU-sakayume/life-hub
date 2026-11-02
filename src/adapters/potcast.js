@@ -11,7 +11,7 @@
  */
 import { isObject, hasOnly, validDate, validTimestamp, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 export const MAX_TRACKS = 80;
 

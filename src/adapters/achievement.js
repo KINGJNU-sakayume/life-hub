@@ -10,7 +10,7 @@
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 export const MAX_TAGS = 10;
 
 function validRecord(p) {

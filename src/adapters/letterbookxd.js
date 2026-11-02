@@ -11,7 +11,7 @@
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 const intIn = (v, lo, hi) => v === undefined || (Number.isInteger(v) && v >= lo && v <= hi);
 
 function validReading(p) {

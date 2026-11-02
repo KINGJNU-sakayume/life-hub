@@ -1,7 +1,7 @@
 /**
  * Minimal, stateless MCP server over Streamable HTTP (JSON responses only).
  *
- * Speaks both eras so any Claude client version can connect:
+ * Speaks both eras so Claude and Codex clients can connect:
  * - modern (2026-07-28): no handshake; version in params._meta and the MCP-Protocol-Version header,
  *   `server/discover`, `resultType` on every result, Mcp-Method / Mcp-Name header checks.
  * - legacy (2025-03-26 .. 2025-11-25): `initialize` handshake, then plain requests.
@@ -14,10 +14,10 @@ export const LEGACY_VERSIONS = Object.freeze(['2025-11-25', '2025-06-18', '2025-
 const ALL_VERSIONS = [...MODERN_VERSIONS, ...LEGACY_VERSIONS];
 const META_VERSION = 'io.modelcontextprotocol/protocolVersion';
 const SERVER_INFO = Object.freeze({ name: 'life-hub', title: 'Life Hub', version: '0.3.0' });
-const INSTRUCTIONS = 'Life Hub collects PROPOSALS for the owner\'s personal food log (PALATE). ' +
-  'Propose only what the user explicitly says actually happened (a meal they ate) or wants (a place or dish to try). ' +
-  'Never infer meals from plans, questions or hypotheticals. Proposals stay pending until the owner approves them in PALATE; ' +
-  'never tell the user something was recorded, only that it was proposed for review.';
+const INSTRUCTIONS = 'Life Hub collects PENDING PROPOSALS for personal archives (food, memories, music, activities, books, stations and media). ' +
+  'Propose only events the user explicitly reports as having happened, or wishes explicitly stated; never turn plans into completed events. ' +
+  'Each destination validates its own fields. No candidate becomes a real record until the owner approves it in the destination app. ' +
+  'Never claim the record was saved, only that a proposal was submitted for review.';
 const MAX_BODY = 64 * 1024;
 
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };

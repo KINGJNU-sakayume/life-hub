@@ -72,6 +72,10 @@ Every token must be distinct and random, at least 32 characters of `[A-Za-z0-9_-
 
 See [P2_CLAUDE_CONNECTOR.md](P2_CLAUDE_CONNECTOR.md). In short: add a custom connector in Claude with the URL `<origin>/mcp`, then sign in on the Life Hub page with `HUB_OWNER_PASSWORD`.
 
+## 7. Connect Codex (P4, after merging and deploying the Codex PR)
+
+Codex CLI/IDE can use the existing `<origin>/mcp` URL and OAuth owner password; **no new Worker secret is needed**. See [P4_CODEX_CONNECTOR.md](P4_CODEX_CONNECTOR.md) for Codex registration, callback restrictions and smoke tests. A Codex Cloud/mobile task does not automatically inherit local MCP settings.
+
 ## Notes
 
 - Applying migrations to a database that already holds real candidates changes private data. D1 offers point-in-time restore (Time Travel); confirm it covers your plan before applying a new migration, and keep an independent export.

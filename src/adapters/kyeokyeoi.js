@@ -12,7 +12,7 @@
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 /** Labels of 켜켜이's fixed emotion tags (src/utils/emotions.ts); the app maps them to its emoji. */
 export const KYEOKYEOI_EMOTIONS = Object.freeze(['행복', '설렘', '신남', '웃김', '평온', '감동', '슬픔', '우울', '두려움', '화남']);
 const intIn = (v, lo, hi) => v === undefined || (Number.isInteger(v) && v >= lo && v <= hi);
