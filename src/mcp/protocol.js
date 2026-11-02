@@ -94,11 +94,11 @@ export async function handleMcpRequest(request, context) {
     case 'initialize': {
       const requested = params.protocolVersion;
       const protocolVersion = LEGACY_VERSIONS.includes(requested) ? requested : LEGACY_VERSIONS[0];
-      return ok({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
+      return ok({ protocolVersion, capabilities: { tools: { listChanged: false }, ...(isChatgpt ? { resources: { listChanged: false } } : {}) }, serverInfo: SERVER_INFO, instructions: INSTRUCTIONS });
     }
     case 'server/discover':
       if (era !== 'modern') return notFound();
-      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {} }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
+      return ok({ supportedVersions: ALL_VERSIONS, capabilities: { tools: {}, ...(isChatgpt ? { resources: {} } : {}) }, instructions: INSTRUCTIONS, ttlMs: 3600000, cacheScope: 'private' });
     case 'ping':
       if (era !== 'legacy') return notFound();
       return ok({});
