@@ -59,6 +59,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
           command: d1 migrations apply life-hub-private --remote --config wrangler.jsonc
 
       - name: Deploy Worker
@@ -67,6 +68,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
           # --keep-vars preserves HUB_* secrets/variables set in the Cloudflare dashboard.
           command: deploy --config wrangler.jsonc --keep-vars
 

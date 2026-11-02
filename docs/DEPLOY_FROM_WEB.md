@@ -13,6 +13,7 @@ The Worker **fails closed**: until the `HUB_*` values exist, every route except 
    - (Account Settings: Read, if Wrangler asks for it)
    Restrict it to your single account. Copy the token once.
 3. Note your **Account ID** (shown on the Workers & Pages overview page).
+4. **Register a workers.dev subdomain** (one time per account): Workers & Pages → Overview (or Settings → Subdomain) → choose a name. Without it the deploy step uploads the Worker but fails with *"You need to register a workers.dev subdomain before publishing to workers.dev"*.
 
 ## 2. GitHub (repository secrets)
 
