@@ -7,7 +7,7 @@
  * client profile allowlist (src/auth/clients.js), and a consent page that never echoes unescaped
  * client metadata.
  */
-import { profileFor, clientProfiles } from './clients.js';
+import { profileFor, clientProfiles, isAllowedMcpCallback } from './clients.js';
 export const PASSWORD_MIN_LENGTH = 20;
 export const MAX_ATTEMPTS_PER_WINDOW = 10;
 export const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
@@ -123,7 +123,7 @@ ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권�
 }
 
 function notAllowed(env) {
-  const names = clientProfiles(env).map((p) => p.title).join(', ');
+  const names = [...clientProfiles(env).map((p) => p.title), 'Codex (loopback)'].join(', ');
   return messagePage(403, '허용되지 않은 앱', `이 Life Hub는 ${names} 연결만 허용해요.`);
 }
 
@@ -183,7 +183,8 @@ export async function handleAuthorize(request, env, oauth, errors) {
     if (error instanceof AuthorizationError && error.redirectTo && request.method === 'GET') {
       // Only parseAuthRequest() attaches redirectTo, after validating the client and exact redirect URI.
       const target = new URL(error.redirectTo);
-      if (clientProfiles(env).some((p) => p.redirectUri === target.origin + target.pathname))
+      if (clientProfiles(env).some((p) => p.redirectUri === target.origin + target.pathname) ||
+          isAllowedMcpCallback(target.origin + target.pathname))
         return Response.redirect(error.redirectTo, 302);
     }
     if (error instanceof AuthorizationError || error instanceof CimdFetchError)
