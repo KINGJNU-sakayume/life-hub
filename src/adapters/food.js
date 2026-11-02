@@ -5,7 +5,7 @@
  */
 import { isObject, hasOnly, validTimestamp, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 const VERDICT = new Set(['LIKE', 'NEUTRAL', 'DISLIKE']);
 const REORDER = new Set(['YES', 'MAYBE', 'NO']);
 const WISH = new Set(['visit_place', 'try_menu']);
