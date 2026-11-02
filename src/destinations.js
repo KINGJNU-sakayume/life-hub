@@ -12,6 +12,7 @@ import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
 import { toPotcastCandidate } from './adapters/potcast.js';
 import { toAchievementCandidate } from './adapters/achievement.js';
 import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
+import { toSubCandidate } from './adapters/sub.js';
 
 export const DESTINATIONS = Object.freeze([
   {
@@ -38,6 +39,11 @@ export const DESTINATIONS = Object.freeze([
     id: 'letterbookxd', app: '책장', role: 'letterbookxd', path: '/letterbookxd', scope: 'letterbookxd:inbox',
     redirectVar: 'HUB_LETTERBOOKXD_REDIRECT_URI', types: ['reading_record'], adapter: toLetterbookxdCandidate, label: 'letterbookxd',
     grants: 'Life Hub 수신함의 <strong>독서 기록 후보를 가져오고</strong>, 책장에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'sub', app: '역 도장깨기', role: 'sub', path: '/sub', scope: 'sub:inbox',
+    redirectVar: 'HUB_SUB_REDIRECT_URI', types: ['station_visit'], adapter: toSubCandidate, label: 'sub',
+    grants: 'Life Hub 수신함의 <strong>역 방문 후보를 가져오고</strong>, 역 도장깨기에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
 ]);
 

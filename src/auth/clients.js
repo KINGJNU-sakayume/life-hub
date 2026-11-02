@@ -30,7 +30,7 @@ export function clientProfiles(env) {
     // Older MCP clients may omit `resource`; the authorization server defaults it to /mcp.
     allowMissingResource: true,
     title: 'Claude',
-    grants: '음식·추억·방문·음악 감상·활동·독서 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
+    grants: '음식·추억·방문·음악 감상·활동·독서·역 방문 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
   }];
   for (const d of DESTINATIONS) {
     const redirectUri = redirectUriFor(env, d);
