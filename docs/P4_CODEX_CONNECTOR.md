@@ -47,6 +47,14 @@ Ask Codex: “Life Hub에 가상의 수프 먹은 기록 **후보만** 만들어
 
 For a real event, tell Codex explicitly what happened and request a candidate; only the connected owner can approve it inside the destination app.
 
+## Destination compatibility — required before end-to-end use
+
+As of 2026-11-02, the existing destination inbox parsers in **food, kyeokyeoi, potcast, achievement, letterbookxd, sub and AniMan** still allow only `claude|chatgpt|manual`. They **filter out `codex` candidate keys**, so a successful MCP proposal may not appear for review until each destination is updated.
+
+For each destination repository (separate PR/task): extend **only** its source union / regex / candidate-key parser to accept `codex`, preserve the `codex:<idempotency_key>` key unchanged in approval receipts/rejections, and add a synthetic test for a Codex proposal. Do not rewrite Codex's provenance as Claude or ChatGPT; that would break source isolation and receipts. Changes to these repositories are intentionally **not** included in this life-hub-only PR.
+
+**Do not treat Life Hub's green CI as proof of destination UI support.** Deploying this PR does not itself complete all seven end-to-end integrations.
+
 ## Security and compatibility
 
 - **Authentication**: owner password + OAuth authorization code/PKCE, refresh rotation, role + owner ID + scope + resource audience checks remain enforced. A valid `/mcp` token cannot call the P1 `/v1` API.
