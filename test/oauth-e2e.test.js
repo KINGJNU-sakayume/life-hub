@@ -276,7 +276,7 @@ test('ChatGPT MCP OAuth has strict callbacks and can preview, edit and propose a
     const page = await openConsent(env, clientId, challenge, 'gpt-state', CHATGPT_CALLBACK);
     assert.equal(page.response.status, 200, page.html);
     assert.match(page.html, /ChatGPT/);
-    assert.match(page.response.headers.get('Content-Security-Policy'), /chatgpt\\.com/);
+    assert.ok(page.response.headers.get('Content-Security-Policy').includes('https://chatgpt.com'))
     const approved = await submit(env, page, { decision: 'approve', password: PASSWORD });
     assert.equal(approved.status, 302);
     const target = new URL(approved.headers.get('Location'));
