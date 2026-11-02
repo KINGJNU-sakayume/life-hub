@@ -22,6 +22,9 @@ return {
     return h.input('menu_name','메뉴',p.menu_name)+'<div class="two">'+h.input('place_name','식당',p.place_name,{optional:true})+
       h.input('eaten_at','먹은 날',p.eaten_at,{optional:true,type:'date',max:10})+'</div>'+
       h.chips('verdict','어땠나요',V,p.verdict)+h.chips('reorder_intent','또 먹을래요?',R,p.reorder_intent)+h.input('note','메모',p.note,{optional:true,area:true});},
+  preApprove:function(c){var p=c.payload;
+    if(c.type==='meal'&&(!p.eaten_at||!p.verdict||!p.reorder_intent))return {message:'먹은 날·평가·다시 먹기를 채우면 바로 저장돼요. 지금 승인하면 PALATE를 열 때 마저 확인해요.',later:'PALATE에서 마저 할게요'};
+    return null;},
   read:function(v,c){var out={},keys=c.type==='wish'?['wish_kind','name','source_url','note']:['menu_name','place_name','eaten_at','verdict','reorder_intent','note'];
     keys.forEach(function(k){if(v[k])out[k]=v[k];});
     if(c.type==='wish'&&!out.name)return '이름을 적어 주세요.';

@@ -15,7 +15,7 @@ plain text until 「수정」 is opened, and a selected chip toggles off when ta
 | --- | --- | --- |
 | Card resource | `ui://life-hub/card-<destination>.html`, `text/html;profile=mcp-app` | `resources/list`/`read` for Claude grants. `_meta.ui.csp` declares no domains (no network, no remote assets); `prefersBorder: false`. Each card < 25 KB, inline CSS/JS (`src/mcp/cards/`). |
 | Tool → card | `propose_*` tools of a destination with a card get `_meta.ui.resourceUri` (Claude only) | Text `content` is unchanged, so text-only hosts work as before. |
-| Card data | result `structuredContent.card` | `{candidate_id, destination, app, app_url, type, label, status, revision, payload, needs_app_review, approve}`. `approve` is `ok`, `app` (the app does not accept card approval yet) or `scope` (grant without hub:approve). |
+| Card data | result `structuredContent.card` | `{candidate_id, destination, app, app_url, type, label, status, revision, payload, needs_app_review, approve, refs?}`. `approve` is `ok`, `app` (the app does not accept card approval yet) or `scope` (grant without hub:approve). `refs` (e.g. 켜켜이's 시군구 list) is only in `card_*` results, which go to the card and not to the model; the first render's `card_refresh` brings it. |
 | Approval ticket | result `_meta["life-hub/card"].ticket` | 32 random bytes, base64url. Only its SHA-256 is stored (`card_tickets`, 7 days). Never in `content` or `structuredContent`. |
 | Card actions | `card_refresh`, `card_edit`, `card_approve`, `card_reject` | `_meta.ui.visibility: ["app"]`, listed only for a Claude grant with `hub:approve`. |
 | Bridge | `ui/initialize` → `ui/notifications/initialized`, `ui/notifications/tool-result`, `tools/call`, `ui/open-link`, `ui/notifications/size-changed`, `host-context-changed` (theme) | Hand-written in `shell.js`. A card re-drawn from history calls `card_refresh` once to show the current state. |
@@ -42,7 +42,11 @@ pending ──card_approve──▶ approved ──app receipt──▶ confirme
 pending ──app receipt──▶ confirmed                                  (unchanged app review)
 ```
 
-`approved` means "the owner finalised it in Claude; the app has not saved it yet". User-facing text says
+`approved` means "the owner finalised it in Claude; the app has not saved it yet".
+`card_approve` sets `needs_app_review` when the card asks for it (「켜켜이에서 정할게요」, 「PALATE에서 마저 할게요」) **or**
+whenever the app could not save the final payload as is, whatever the card sent: a PALATE meal without date, verdict
+and reorder intent; a 켜켜이 visit whose `region_hint` is not exactly one shared 시군구 label; a 켜켜이 memory with a
+place but no exact label. The card shows the same rule before approving (`preApprove`) and offers 「수정」. User-facing text says
 「승인됨 · 다음에 앱을 열면 저장돼요」, never "saved". `needs_app_review` asks the app for a last check (e.g. no
 시군구 chosen). Edits and approval use `revision` as an optimistic lock, so a double click or two devices
 approve once. Events: `inbox_changes` gains `edited`.
@@ -72,8 +76,8 @@ no KV/R2. Card HTML is served from the Worker bundle.
 
 | Stage | Scope |
 | --- | --- |
-| 1 (this) | Shared shell, food card, app-only tools, `hub:approve`, `approved` state (0008), inbox `open`/`approved`, refs API. Approval stays off for every destination. |
-| 2 | PALATE + 켜켜이: cards for meal/wish/memory/visit (시군구 from refs), app auto-apply with setting; switch `card.approve` on. |
+| 1 (done) | Shared shell, food card, app-only tools, `hub:approve`, `approved` state (0008), inbox `open`/`approved`, refs API. Approval stays off for every destination. |
+| 2 (done) | PALATE + 켜켜이: cards for meal/wish/memory/visit (시군구 from refs), app auto-apply with setting; `card.approve` on for both. |
 | 3 | Diaryroulette: new destination, daily mission (KST date → mission id), roulette card; diary text never leaves the app. |
 | 4 | 업적 라이브러리: record card + `achievement_definition` (count/total/streak/tag). |
 | 5 | 역 도장깨기: draw card + visit card (stamp); R2 photo hand-off as a separate step. |
@@ -87,3 +91,10 @@ no KV/R2. Card HTML is served from the Worker bundle.
    「Claude 대화 카드에서 승인도 허용」 if you want card approval.
 3. Ask Claude to propose a synthetic-looking meal and check the card on web, desktop and mobile. If a client
    shows no card, the text result and PALATE review still work.
+
+## After deploying stage 2
+
+1. Deploy PALATE (food) and 켜켜이 with their stage-2 releases first; open 켜켜이 once so it shares its 시군구 list.
+2. Deploy the Worker (no migration). PALATE and 켜켜이 cards can now approve.
+3. In Claude, propose a synthetic memory and visit; pick a 시군구 in the card and approve, then open 켜켜이: it is
+   saved without asking. Approve one with 「켜켜이에서 정할게요」: it waits in 켜켜이's proposals.
