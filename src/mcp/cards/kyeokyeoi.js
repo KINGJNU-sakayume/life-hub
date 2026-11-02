@@ -5,43 +5,20 @@
  */
 import { cardDocument } from './shell.js';
 import { KYEOKYEOI_EMOTIONS } from '../../adapters/kyeokyeoi.js';
+import { PICKER_SCRIPT } from './picker.js';
 
 const BODY = String.raw`
 window.LH_BODY=(function(){
 var EMO=${JSON.stringify(KYEOKYEOI_EMOTIONS)}.map(function(e){return [e,e];});
 var ORDER=['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
 var regions=function(c){return (c.refs&&c.refs.regions)||[];};
-var exact=function(c,label){var r=regions(c);for(var i=0;i<r.length;i++)if(r[i].label===label)return r[i];return null;};
-var sq=function(s){return String(s||'').replace(/\s+/g,'');};
+var exact=function(c,label){return LH_PICK.find(regions(c),label);};
 function when(p){if(p.year)return p.year+'년'+(p.month?' '+p.month+'월':'')+(p.day?' '+p.day+'일':'');return p.time_text||'';}
 function place(c,p,h){var hint=p.region_hint;if(!hint)return p.place_text||'';
   var shown=exact(c,hint)?hint:hint+' (켜켜이에서 확인)';return p.place_text&&p.place_text!==hint?p.place_text+' · '+shown:shown;}
-function picker(c,h,required){var p=c.payload,r=regions(c),cur=p.region_hint||'';
-  if(!r.length)return '<div class="field"><span class="lbl">시군구</span><input type="hidden" name="region_hint" value="'+h.esc(cur)+'"><p class="meta">켜켜이를 한 번 열면 여기서 시군구를 고를 수 있어요.'+(cur?' 지금: '+h.esc(cur):'')+'</p></div>';
-  var groups=[];r.forEach(function(x){if(x.group&&groups.indexOf(x.group)<0)groups.push(x.group);});
-  groups.sort(function(a,b){var i=ORDER.indexOf(a),j=ORDER.indexOf(b);return (i<0?99:i)-(j<0?99:j);});
-  var hit=exact(c,cur);
-  return '<div class="field pick" data-pick><span class="lbl" id="l-rg">시군구'+(required?'':' <span class="opt">선택</span>')+'</span>'+
-    '<input type="hidden" name="region_hint" value="'+h.esc(cur)+'">'+
-    '<p class="sel" data-sel></p>'+
-    '<input type="search" data-q aria-label="시군구 검색" placeholder="이름으로 찾기 (예: 일산서구)" value="'+h.esc(hit?'':(cur||''))+'" maxlength="40">'+
-    '<div class="chips" role="group" aria-label="시·도">'+groups.map(function(g){return '<button type="button" class="chip" data-prov="'+h.esc(g)+'" aria-pressed="'+(hit&&hit.group===g)+'">'+h.esc(g)+'</button>';}).join('')+'</div>'+
-    '<div class="plist" role="group" aria-labelledby="l-rg" data-list></div></div>';}
-function bindPicker(form,c,h){var box=form.querySelector('[data-pick]');if(!box)return;
-  var hidden=box.querySelector('input[name=region_hint]'),q=box.querySelector('[data-q]'),list=box.querySelector('[data-list]'),sel=box.querySelector('[data-sel]');
-  var hit=exact(c,hidden.value),prov=hit?hit.group:'';
-  function draw(){var v=hidden.value,ok=exact(c,v),term=sq(q.value),items=[];
-    sel.innerHTML=v?(ok?'고른 곳: <b>'+h.esc(v)+'</b> · 다시 누르면 해제':'지금: '+h.esc(v)+' · 목록에서 골라 주세요'):'아직 고르지 않았어요';
-    if(term)items=regions(c).filter(function(x){return sq(x.label).indexOf(term)>=0;}).slice(0,40);
-    else if(prov)items=regions(c).filter(function(x){return x.group===prov;});
-    list.innerHTML=items.map(function(x){return '<button type="button" class="chip" data-rg="'+h.esc(x.label)+'" aria-pressed="'+(x.label===v)+'">'+h.esc(x.label.indexOf(x.group+' ')===0?x.label.slice(x.group.length+1):x.label)+'</button>';}).join('')||
-      (term?'<p class="meta">찾는 시군구가 없어요.</p>':'');
-    box.querySelectorAll('[data-prov]').forEach(function(b){b.setAttribute('aria-pressed',String(!term&&b.dataset.prov===prov));});}
-  box.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;e.stopPropagation();
-    if(b.dataset.prov!==undefined){prov=prov===b.dataset.prov?'':b.dataset.prov;q.value='';}
-    else if(b.dataset.rg!==undefined)hidden.value=hidden.value===b.dataset.rg?'':b.dataset.rg;
-    draw();});
-  q.addEventListener('input',draw);draw();}
+var REGION=function(c,required){return {name:'region_hint',title:'시군구',items:regions(c),value:c.payload.region_hint,required:required,order:ORDER,noun:'시군구',example:'일산서구',missing:'켜켜이를 한 번 열면 여기서 시군구를 고를 수 있어요.',picked:'고른 곳'};};
+function picker(c,h,required){return LH_PICK.html(h,REGION(c,required));}
+function bindPicker(form,c,h){LH_PICK.bind(form,h,REGION(c,false));}
 var num=function(v){return /^\d{1,4}$/.test(v)?Number(v):undefined;};
 return {
   view:function(c,h){var p=c.payload;
@@ -82,4 +59,4 @@ return {
 `;
 
 export const KYEOKYEOI_CARD_URI = 'ui://life-hub/card-kyeokyeoi.html';
-export const KYEOKYEOI_CARD_HTML = cardDocument('Life Hub · 켜켜이', BODY);
+export const KYEOKYEOI_CARD_HTML = cardDocument('Life Hub · 켜켜이', PICKER_SCRIPT + BODY);

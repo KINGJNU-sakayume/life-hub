@@ -123,6 +123,21 @@ const activitySchema = {
     memo: { type: 'string', minLength: 1, maxLength: 500, description: 'Short note in the user\'s words. Do not paste the conversation.' },
   },
 };
+const definitionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'tier', 'condition_type'],
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 40, description: 'Short, fun achievement name in Korean (e.g. "한강 100km", "새벽 러너").' },
+    description: { type: 'string', minLength: 1, maxLength: 200, description: 'One sentence saying what to do, as the app phrases it (e.g. "러닝 기록을 모두 더해 100km를 달려 보세요.").' },
+    category: { type: 'string', minLength: 1, maxLength: 60, description: 'Category whose records count (subcategories included), as the app names it. Defaults: ' + ACHIEVEMENT_CATEGORIES + '. Omit only for an achievement over every record. The owner confirms it.' },
+    tier: { type: 'string', enum: ['bronze', 'silver', 'gold', 'platinum', 'diamond'], description: 'Difficulty: bronze 처음 해 보는 일, silver 조금씩 쌓이는 습관, gold 꾸준함이 필요한 목표, platinum 몇 달은 걸리는 큰 목표, diamond 손에 꼽을 만한 기록.' },
+    condition_type: { type: 'string', enum: ['count', 'total', 'streak', 'tag', 'tag_count'], description: 'count: target records. total: record values add up to target in unit. streak: target consecutive days. tag: one record tagged tag. tag_count: target records tagged tag.' },
+    target: { type: 'number', minimum: 0, maximum: 1000000000, description: 'Goal number: a whole number for count/streak/tag_count, any positive amount for total. Not for tag.' },
+    unit: { type: 'string', minLength: 1, maxLength: 20, description: 'Unit of a total goal only (km, 분, 시간, 권, 원, 만원, L, 걸음, kg, 회 …).' },
+    tag: { type: 'string', minLength: 1, maxLength: 30, description: 'One-word keyword without "#", for tag/tag_count (e.g. 남산, 대회, 새벽).' },
+  },
+};
 const readingSchema = {
   type: 'object',
   additionalProperties: false,
@@ -223,6 +238,13 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_achievement',
+    title: 'Propose a custom achievement for 업적 라이브러리',
+    description: 'Propose ONE new custom achievement (a goal) when the user asks to create, add or set one in 업적 라이브러리 ("러닝 누적 100km 업적 만들어줘", "30일 연속 독서 업적 추가해줘"). Never for an activity they did (use propose_activity_record) and never unasked. Pick the tier by difficulty and the simplest fitting condition. Its progress counts the owner\'s existing records too. ' + pendingNote('업적 라이브러리') + ' Identical proposals are de-duplicated.',
+    inputSchema: definitionSchema,
+    annotations: WRITE,
+  },
+  {
     name: 'propose_reading_record',
     title: 'Propose a reading record for 책장',
     description: 'Propose ONE book the user said they finished or are reading, for their 책장 reading log (it tracks per-volume reading state, pages, 1–5 stars and 인생책). Use only for books the user actually read or is reading, never for wishlists or recommendations. 책장 finds the book in its own catalogue; give the Korean edition title and author when you know them, and publisher/volume only if the user said them. A finished book may also deserve a 독서 record for 업적 라이브러리 if the user tracks that. ' + pendingNote('책장') + ' Identical proposals are de-duplicated.',
@@ -293,7 +315,7 @@ export const CARD_TOOLS = Object.freeze([
 ]);
 const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
-  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement',
+  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
   propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_media_progress: 'animan',
   propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette',
 });
@@ -347,6 +369,11 @@ async function cardRefs(context, destination) {
  */
 export function needsAppReview(destination, type, payload, refs) {
   if (destination === 'food' && type === 'meal') return !payload.eaten_at || !payload.verdict || !payload.reorder_intent;
+  if (destination === 'achievement') {
+    // The record (or achievement) must land in exactly one of the owner's categories; an achievement may have none.
+    const hits = (refs?.categories ?? []).filter((c) => c.label === payload.category).length;
+    return type === 'achievement_definition' && payload.category === undefined ? false : hits !== 1;
+  }
   if (destination === 'kyeokyeoi') {
     const labels = new Set((refs?.regions ?? []).map((r) => r.label));
     const exact = typeof payload.region_hint === 'string' && labels.has(payload.region_hint);
@@ -584,6 +611,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
     } else if (name === 'propose_activity_record') {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
+    } else if (name === 'propose_achievement') {
+      outcome = await propose(context, 'achievement', 'achievement_definition', pick(args, definitionSchema));
     } else if (name === 'propose_reading_record') {
       outcome = await propose(context, 'letterbookxd', 'reading_record', pick(args, readingSchema));
     } else if (name === 'propose_station_visit') {

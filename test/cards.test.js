@@ -76,13 +76,13 @@ test('resources: every card is a small self-contained mcp-app page with no exter
     const list = await rpc(db, 'resources/list', {});
     assert.deepEqual(list.result.resources.map((r) => [r.uri, r.mimeType]), [
       ['ui://life-hub/card-food.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-kyeokyeoi.html', 'text/html;profile=mcp-app'],
-      ['ui://life-hub/card-diaryroulette.html', 'text/html;profile=mcp-app']]);
+      ['ui://life-hub/card-diaryroulette.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-achievement.html', 'text/html;profile=mcp-app']]);
     for (const { uri } of list.result.resources) {
     const read = await rpc(db, 'resources/read', { uri });
     const [content] = read.result.contents;
     assert.equal(content.mimeType, 'text/html;profile=mcp-app');
     assert.deepEqual(content._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
-    assert.ok(content.text.length < 25000, `card is ${content.text.length} bytes`);
+    assert.ok(Buffer.byteLength(content.text) < 25000, `card is ${Buffer.byteLength(content.text)} bytes`);
     assert.match(content.text, /^<!doctype html>/);
     // No remote code, styles, images or network calls.
     assert.doesNotMatch(content.text, /<script[^>]+src=|<link[^>]+href=|<img|url\(|@import|fetch\(|XMLHttpRequest|WebSocket|EventSource/);
