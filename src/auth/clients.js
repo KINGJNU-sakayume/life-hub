@@ -9,8 +9,27 @@ import { DESTINATIONS, redirectUriFor } from '../destinations.js';
 
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 
+/**
+ * Codex CLI/IDE OAuth uses an RFC 8252 loopback callback. The port changes at each login;
+ * without issuer identification its callback has a server-specific suffix.
+ * Only the numeric IPv4 loopback host and Codex callback paths are permitted.
+ */
+export function isCodexCallback(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && url.hostname === '127.0.0.1' &&
+      !url.username && !url.password && !url.search && !url.hash &&
+      /^\/callback(?:\/[A-Za-z0-9_-]{8,80})?$/.test(url.pathname) &&
+      (!url.port || (Number(url.port) >= 1 && Number(url.port) <= 65535)) &&
+      url.href === value;
+  } catch { return false; }
+}
+
+export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexCallback(uri);
+
 export const SCOPES = Object.freeze({
-  /** One scope for every Claude proposal tool, so adding a destination never needs a reconnect. */
+  /** One scope for every conversational proposal tool, so new destinations need no reconnect. */
   HUB_PROPOSE: 'hub:propose',
   // Per-destination proposal scopes from earlier grants; still honored.
   PROPOSE: 'food:propose', KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose',
@@ -18,7 +37,7 @@ export const SCOPES = Object.freeze({
 });
 export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast' });
 
-/** Every scope the authorization server knows: Claude's, the legacy proposal scopes, each app's inbox. */
+/** Every scope the authorization server knows: MCP proposals, legacy scopes, and destination inboxes. */
 export const ALL_SCOPES = Object.freeze([
   SCOPES.HUB_PROPOSE, ...DESTINATIONS.map((d) => d.scope), ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
 ]);
@@ -44,7 +63,13 @@ export function clientProfiles(env) {
 
 /** The profile for an authorization request, or null if the request must be refused. */
 export function profileFor(env, authRequest) {
-  const profile = clientProfiles(env).find((p) => p.redirectUri === authRequest.redirectUri);
+  const profile = clientProfiles(env).find((p) => p.redirectUri === authRequest.redirectUri) ??
+    (isCodexCallback(authRequest.redirectUri) ? {
+      id: 'codex', role: 'codex', redirectUri: authRequest.redirectUri,
+      resourcePath: RESOURCE_PATHS.MCP, scopes: [SCOPES.HUB_PROPOSE],
+      allowMissingResource: true, title: 'Codex',
+      grants: '개인 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 각 앱에서 직접 승인하기 전까지 실제 기록은 바뀌지 않아요.',
+    } : null);
   if (!profile) return null;
   const expected = env.HUB_PUBLIC_ORIGIN + profile.resourcePath;
   if (authRequest.resource === undefined ? !profile.allowMissingResource : authRequest.resource !== expected) return null;
