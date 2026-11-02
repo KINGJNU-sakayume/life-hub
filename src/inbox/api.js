@@ -3,6 +3,7 @@
  *   PALATE    → prefix /palate/v1,    destination food,      scope food:inbox
  *   켜켜이     → prefix /kyeokyeoi/v1, destination kyeokyeoi, scope kyeokyeoi:inbox
  *   potcast   → prefix /potcast/v1,   destination potcast,   scope potcast:inbox
+ *   (and every other entry of src/destinations.js the same way)
  *
  * After the owner signs in, the app may:
  *   GET  <prefix>/candidates?status=pending|all&limit=N   read its candidates (in its own v1 shape)
@@ -13,13 +14,14 @@
  * Every write is idempotent so the app can retry from its outbox. Nothing here creates candidates.
  */
 import { toDestinationCandidate } from '../adapters/index.js';
+import { destinationById } from '../destinations.js';
 import { listDestinationCandidates, confirmCandidateByKey, rejectCandidateByKey, StoreFailure } from '../server/store.js';
 
 const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** Candidate types each destination can confirm, i.e. the allowed receipt `entity_type`s. */
-const ENTITY_TYPES = Object.freeze({ food: ['meal', 'wish'], kyeokyeoi: ['memory', 'visit'], potcast: ['album_listening'] });
+const entityTypes = (destination) => destinationById(destination)?.types ?? [];
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const json = (status, value) => new Response(JSON.stringify(value), { status, headers: HEADERS });
 
@@ -57,7 +59,7 @@ function view(record) {
   };
 }
 
-/** @param {{ db: any, ownerId: string, now: () => number, destination: 'food'|'kyeokyeoi', prefix: string }} context */
+/** @param {{ db: any, ownerId: string, now: () => number, destination: string, prefix: string }} context */
 export async function handleInboxRequest(request, context) {
   const url = new URL(request.url);
   const at = new Date(context.now()).toISOString();
@@ -74,7 +76,7 @@ export async function handleInboxRequest(request, context) {
     if (url.pathname === prefix + '/receipts' && request.method === 'POST') {
       const body = await readJson(request, ['key', 'entity_type', 'entity_id']);
       const { source, idempotencyKey } = parseKey(body.key);
-      if (!ENTITY_TYPES[destination].includes(body.entity_type) || typeof body.entity_id !== 'string' || !ENTITY_ID.test(body.entity_id))
+      if (!entityTypes(destination).includes(body.entity_type) || typeof body.entity_id !== 'string' || !ENTITY_ID.test(body.entity_id))
         throw new InputError('Invalid receipt');
       const record = await confirmCandidateByKey(context.db, context.ownerId, destination, source, idempotencyKey, body.entity_type, body.entity_id, at);
       return json(200, { candidate: view(record) });

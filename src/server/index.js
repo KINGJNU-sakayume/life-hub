@@ -1,14 +1,13 @@
 /**
  * Worker entry point.
  *
- * One OAuth authorization server, two protected resources, plus the P1 API:
- * - /mcp/*                    Claude custom connector (MCP), scope food:propose, role claude
- * - /palate/*                 PALATE inbox API, scope food:inbox, role palate
- * - /kyeokyeoi/*              켜켜이 inbox API, scope kyeokyeoi:inbox, role kyeokyeoi
- * - /potcast/*                potcast inbox API, scope potcast:inbox, role potcast
+ * One OAuth authorization server, one protected resource per client, plus the P1 API:
+ * - /mcp/*                    Claude custom connector (MCP), scope hub:propose, role claude
+ * - /<app path>/*             each destination app's inbox API (src/destinations.js), e.g.
+ *                             /palate (food:inbox), /kyeokyeoi, /potcast, /achievement
  * - /authorize                owner password + consent page (ours)
  * - /oauth/token, /oauth/register, /.well-known/oauth-authorization-server   the library's
- * - /.well-known/oauth-protected-resource/{mcp,palate,kyeokyeoi}             each resource's
+ * - /.well-known/oauth-protected-resource/<path>                               each resource's
  * - /health, /v1/*            P1 server-to-server API with static role tokens (unchanged)
  *
  * The servers need the public origin to name the issuer and resources, so they are built lazily
@@ -20,12 +19,13 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
-import { CLAUDE_CALLBACK, SCOPES, RESOURCE_PATHS, palateRedirectUri, kyeokyeoiRedirectUri, potcastRedirectUri } from '../auth/clients.js';
+import { CLAUDE_CALLBACK, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
+import { DESTINATIONS, redirectUriFor } from '../destinations.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
 import { handleInboxRequest } from '../inbox/api.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
-const OAUTH_PATHS = /^\/(?:mcp|palate|kyeokyeoi|potcast|authorize|oauth\/|\.well-known\/oauth-)/;
+const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const notConfigured = () => new Response(JSON.stringify({ error: 'OAuth is not configured' }), { status: 503, headers: JSON_HEADERS });
 const forbidden = () => new Response(JSON.stringify({ error: 'Token is not valid for this Life Hub' }), { status: 403, headers: JSON_HEADERS });
@@ -65,26 +65,24 @@ function inboxHandler(role, scope, destination, prefix) {
     },
   };
 }
-export const palateHandler = inboxHandler('palate', SCOPES.INBOX, 'food', RESOURCE_PATHS.PALATE + '/v1');
-export const kyeokyeoiHandler = inboxHandler('kyeokyeoi', SCOPES.KYEOKYEOI_INBOX, 'kyeokyeoi', RESOURCE_PATHS.KYEOKYEOI + '/v1');
-export const potcastHandler = inboxHandler('potcast', SCOPES.POTCAST_INBOX, 'potcast', RESOURCE_PATHS.POTCAST + '/v1');
+/** One inbox handler per destination app, keyed by destination id. */
+export const inboxHandlers = Object.freeze(Object.fromEntries(
+  DESTINATIONS.map((d) => [d.id, inboxHandler(d.role, d.scope, d.id, d.path + '/v1')])));
+export const palateHandler = inboxHandlers.food;
 
 export function createServers(origin) {
   const mcpResource = origin + RESOURCE_PATHS.MCP;
-  const palateResource = origin + RESOURCE_PATHS.PALATE;
-  const kyeokyeoiResource = origin + RESOURCE_PATHS.KYEOKYEOI;
-  const potcastResource = origin + RESOURCE_PATHS.POTCAST;
   const authorizationServer = new OAuthAuthorizationServer({
     issuer: origin,
-    resources: [mcpResource, palateResource, kyeokyeoiResource, potcastResource],
+    resources: [mcpResource, ...DESTINATIONS.map((d) => origin + d.path)],
     // Older MCP clients may omit `resource`; they mean the MCP endpoint.
     defaultResource: mcpResource,
     authorizeEndpoint: origin + '/authorize',
     tokenEndpoint: origin + '/oauth/token',
     clientRegistrationEndpoint: origin + '/oauth/register',
-    // CIMD (Claude may use it; PALATE and 켜켜이 do) needs the global_fetch_strictly_public flag. DCR is the fallback.
+    // CIMD (Claude may use it; the destination apps do) needs the global_fetch_strictly_public flag. DCR is the fallback.
     clientIdMetadataDocumentEnabled: true,
-    scopesSupported: [SCOPES.HUB_PROPOSE, SCOPES.INBOX, SCOPES.KYEOKYEOI_INBOX, SCOPES.POTCAST_INBOX, SCOPES.PROPOSE, SCOPES.KYEOKYEOI_PROPOSE],
+    scopesSupported: [...ALL_SCOPES],
     // DCR is only for Claude; the destination apps identify themselves with their CIMD documents.
     clientRegistrationCallback: ({ clientMetadata }) => {
       const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
@@ -98,19 +96,11 @@ export function createServers(origin) {
     resourceMetadata: { resource: mcpResource, authorization_servers: [origin] },
     requiredScopes: [SCOPES.HUB_PROPOSE], validateToken, handler: mcpHandler,
   });
-  const palate = new OAuthResourceServer({
-    resourceMetadata: { resource: palateResource, authorization_servers: [origin] },
-    requiredScopes: [SCOPES.INBOX], validateToken, handler: palateHandler,
-  });
-  const kyeokyeoi = new OAuthResourceServer({
-    resourceMetadata: { resource: kyeokyeoiResource, authorization_servers: [origin] },
-    requiredScopes: [SCOPES.KYEOKYEOI_INBOX], validateToken, handler: kyeokyeoiHandler,
-  });
-  const potcast = new OAuthResourceServer({
-    resourceMetadata: { resource: potcastResource, authorization_servers: [origin] },
-    requiredScopes: [SCOPES.POTCAST_INBOX], validateToken, handler: potcastHandler,
-  });
-  return { authorizationServer, mcp, palate, kyeokyeoi, potcast };
+  const inboxes = new Map(DESTINATIONS.map((d) => [d.id, new OAuthResourceServer({
+    resourceMetadata: { resource: origin + d.path, authorization_servers: [origin] },
+    requiredScopes: [d.scope], validateToken, handler: inboxHandlers[d.id],
+  })]));
+  return { authorizationServer, mcp, inboxes };
 }
 
 const under = (path, base) => path === base || path.startsWith(base + '/');
@@ -128,17 +118,11 @@ export default {
 
     if (under(path, RESOURCE_PATHS.MCP) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.MCP))
       return s.mcp.fetch(request, env, ctx);
-    if (under(path, RESOURCE_PATHS.PALATE) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.PALATE)) {
-      if (!palateRedirectUri(env)) return notConfigured();
-      return s.palate.fetch(request, env, ctx);
-    }
-    if (under(path, RESOURCE_PATHS.KYEOKYEOI) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.KYEOKYEOI)) {
-      if (!kyeokyeoiRedirectUri(env)) return notConfigured();
-      return s.kyeokyeoi.fetch(request, env, ctx);
-    }
-    if (under(path, RESOURCE_PATHS.POTCAST) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.POTCAST)) {
-      if (!potcastRedirectUri(env)) return notConfigured();
-      return s.potcast.fetch(request, env, ctx);
+    for (const d of DESTINATIONS) {
+      if (under(path, d.path) || under(path, '/.well-known/oauth-protected-resource' + d.path)) {
+        if (!redirectUriFor(env, d)) return notConfigured();
+        return s.inboxes.get(d.id).fetch(request, env, ctx);
+      }
     }
     if (path === '/authorize')
       return handleAuthorize(request, env, s.authorizationServer.getOAuthApi(env), { AuthorizationError, CimdFetchError });

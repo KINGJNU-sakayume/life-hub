@@ -46,6 +46,12 @@ export const FIELDS = Object.freeze([
     normalize: (v) => v.trim(),
     hint: 'empty, or potcast\'s Life Hub callback URL such as https://<user>.github.io/potcast/lifehub/ (no query or fragment)',
   },
+  {
+    env: 'HUB_ACHIEVEMENT_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI', optional: true,
+    valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or 업적 라이브러리\'s Life Hub callback URL such as https://<user>.github.io/achievement/lifehub/ (no query or fragment)',
+  },
 ]);
 
 export function renderWranglerConfig(exampleText, values) {

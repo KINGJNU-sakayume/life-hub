@@ -12,6 +12,7 @@ const APPS = {
   kyeokyeoi: { url: 'https://owner.github.io/kyeokyeoi/', name: '켜켜이', scope: 'kyeokyeoi:inbox', path: '/kyeokyeoi' },
   palate: { url: 'https://owner.github.io/food/', name: 'PALATE', scope: 'food:inbox', path: '/palate' },
   potcast: { url: 'https://owner.github.io/potcast/lifehub/', name: 'potcast', scope: 'potcast:inbox', path: '/potcast' },
+  achievement: { url: 'https://owner.github.io/achievement/lifehub/', name: '업적 라이브러리', scope: 'achievement:inbox', path: '/achievement' },
 };
 const clientId = (app) => app.url.replace(/lifehub\/$/, '') + 'lifehub-client.json';
 const realFetch = globalThis.fetch;
@@ -30,6 +31,7 @@ const PASSWORD = 'synthetic-owner-password-' + 'k'.repeat(24);
 const makeEnv = (patch = {}) => ({
   DB: new TestD1(), OAUTH_KV: new TestKV(), HUB_PUBLIC_ORIGIN: ORIGIN,
   HUB_PALATE_REDIRECT_URI: APPS.palate.url, HUB_KYEOKYEOI_REDIRECT_URI: APPS.kyeokyeoi.url, HUB_POTCAST_REDIRECT_URI: APPS.potcast.url,
+  HUB_ACHIEVEMENT_REDIRECT_URI: APPS.achievement.url,
   HUB_OWNER_ID: 'demo-owner', HUB_OWNER_PASSWORD: PASSWORD, HUB_OWNER_TOKEN: 'owner_' + 'A'.repeat(48), ...patch,
 });
 const call = (env, path, init = {}) => worker.fetch(new Request(ORIGIN + path, init), env, { waitUntil() {}, passThroughOnException() {}, props: {} });
@@ -140,5 +142,30 @@ test('potcast connects via its callback page and receives album_listening candid
     assert.equal((await api(env, token.access_token, '/potcast/v1/receipts', 'POST', { key, entity_type: 'memory', entity_id: 'x' })).status, 400);
     assert.equal((await api(env, token.access_token, '/potcast/v1/receipts', 'POST', { key, entity_type: 'album_listening', entity_id: 'A'.repeat(22) })).status, 200);
     assert.equal((await api(env, token.access_token, '/kyeokyeoi/v1/candidates')).status, 401);
+  } finally { env.DB.close(); }
+});
+
+test('업적 라이브러리 connects via its callback page and receives activity_record candidates only', async () => {
+  const env = makeEnv();
+  try {
+    await seed(env);
+    const at = '2026-11-02T01:00:00Z';
+    await insertCandidate(env.DB, 'demo-owner', { hub_version: 1, source: 'claude', source_ref: 'claude-mcp:2026-11-02', created_at: at,
+      destination: 'achievement', idempotency_key: 'mcp-' + 'r'.repeat(40), candidate_type: 'activity_record',
+      payload: { category: '러닝', date: '2026-11-02', value: 5, unit: 'km' } }, at);
+    const prm = await (await call(env, '/.well-known/oauth-protected-resource/achievement')).json();
+    assert.equal(prm.resource, ORIGIN + '/achievement');
+    const { html, token } = await connect(env, APPS.achievement);
+    assert.match(html, /achievement:inbox/);
+    const t = token.access_token;
+    const { candidates } = await (await api(env, t, '/achievement/v1/candidates')).json();
+    assert.deepEqual(candidates.map((c) => c.candidate.candidate_type), ['activity_record']);
+    const key = candidates[0].key;
+    assert.equal((await api(env, t, '/achievement/v1/receipts', 'POST', { key, entity_type: 'album_listening', entity_id: 'x' })).status, 400);
+    assert.equal((await api(env, t, '/achievement/v1/receipts', 'POST', { key, entity_type: 'activity_record', entity_id: 'lh_rec_1' })).status, 200);
+    assert.equal((await api(env, t, '/potcast/v1/candidates')).status, 401);
+    // Off without its redirect variable.
+    const off = makeEnv({ HUB_ACHIEVEMENT_REDIRECT_URI: '' });
+    try { assert.equal((await call(off, '/achievement/v1/candidates')).status, 503); } finally { off.DB.close(); }
   } finally { env.DB.close(); }
 });

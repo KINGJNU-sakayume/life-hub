@@ -12,7 +12,7 @@ const meal = () => ({
 const at = '2026-11-01T10:01:00.000Z';
 test('only allow known fields and destination; no transcript or token', () => {
   assert.throws(() => validateHubEnvelope({ ...meal(), raw_conversation: 'private data' }));
-  assert.throws(() => validateHubEnvelope({ ...meal(), destination: 'achievement' }));
+  assert.throws(() => validateHubEnvelope({ ...meal(), destination: 'nowhere' }));
   assert.throws(() => validateHubEnvelope({ ...meal(), idempotency_key: 'short' }));
   assert.doesNotThrow(() => validateHubEnvelope(meal()));
 });
