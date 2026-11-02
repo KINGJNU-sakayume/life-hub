@@ -38,6 +38,7 @@ Settings → Secrets and variables → Actions.
 | `HUB_PALATE_REDIRECT_URI` | optional (P2b): PALATE's app URL, e.g. `https://<user>.github.io/food/` |
 | `HUB_KYEOKYEOI_REDIRECT_URI` | optional (P3): 켜켜이's app URL, e.g. `https://<user>.github.io/kyeokyeoi/` |
 | `HUB_POTCAST_REDIRECT_URI` | optional (P3): potcast's Life Hub callback page, e.g. `https://<user>.github.io/potcast/lifehub/` |
+| `HUB_ACHIEVEMENT_REDIRECT_URI` | optional (P3): 업적 라이브러리's Life Hub callback page, e.g. `https://<user>.github.io/achievement/lifehub/` |
 
 Optional: Settings → Environments → `production` → add yourself as a required reviewer so every deploy waits for a tap of approval.
 

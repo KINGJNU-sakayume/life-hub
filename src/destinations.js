@@ -1,0 +1,49 @@
+/**
+ * Every destination app in one place. Adding an app means: an adapter (src/adapters/<id>.js), an entry
+ * here, its id in core/candidates.js, its MCP tool(s), and an optional redirect variable in the deploy
+ * config (scripts/render-wrangler-config.mjs, wrangler.example.jsonc, .github/workflows/deploy.yml).
+ *
+ * For each entry the hub serves an OAuth protected resource at `path` (scope `scope`, token role
+ * `role`), a client profile chosen by the exact redirect URI in `redirectVar`, and the inbox API at
+ * `<path>/v1`. Without the redirect variable the app's profile and API are off.
+ */
+import { toFoodCandidate } from './adapters/food.js';
+import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
+import { toPotcastCandidate } from './adapters/potcast.js';
+import { toAchievementCandidate } from './adapters/achievement.js';
+
+export const DESTINATIONS = Object.freeze([
+  {
+    id: 'food', app: 'PALATE', role: 'palate', path: '/palate', scope: 'food:inbox', legacyProposeScope: 'food:propose',
+    redirectVar: 'HUB_PALATE_REDIRECT_URI', types: ['meal', 'wish'], adapter: toFoodCandidate, label: 'PALATE',
+    grants: 'Life Hub 수신함의 <strong>음식 후보를 가져오고</strong>, PALATE에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'kyeokyeoi', app: '켜켜이', role: 'kyeokyeoi', path: '/kyeokyeoi', scope: 'kyeokyeoi:inbox', legacyProposeScope: 'kyeokyeoi:propose',
+    redirectVar: 'HUB_KYEOKYEOI_REDIRECT_URI', types: ['memory', 'visit'], adapter: toKyeokyeoiCandidate, label: 'kyeokyeoi',
+    grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'potcast', app: 'potcast', role: 'potcast', path: '/potcast', scope: 'potcast:inbox',
+    redirectVar: 'HUB_POTCAST_REDIRECT_URI', types: ['album_listening'], adapter: toPotcastCandidate, label: 'potcast',
+    grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, potcast에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+  {
+    id: 'achievement', app: '업적 라이브러리', role: 'achievement', path: '/achievement', scope: 'achievement:inbox',
+    redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', types: ['activity_record'], adapter: toAchievementCandidate, label: 'achievement',
+    grants: 'Life Hub 수신함의 <strong>활동 기록 후보를 가져오고</strong>, 업적 라이브러리에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+  },
+]);
+
+const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]));
+export const destinationById = (id) => BY_ID.get(id) ?? null;
+
+const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
+/** A destination app's redirect URI comes from deploy config; null when unset or malformed. */
+export function redirectUriFor(env, destination) {
+  const value = env[destination.redirectVar];
+  return typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300 ? value : null;
+}
+
+/** Adapter validation failures (no user data in the message): reported as fixable input errors. */
+export const ADAPTER_ERROR = new RegExp(`^(?:Invalid Life Hub|(?:Invalid|Unsupported) (?:${DESTINATIONS.map((d) => d.label).join('|')}) )`);

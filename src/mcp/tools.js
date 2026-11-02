@@ -8,6 +8,7 @@
 import { canonical } from '../core/candidates.js';
 import { insertCandidate, getCandidate, StoreFailure } from '../server/store.js';
 import { KYEOKYEOI_EMOTIONS } from '../adapters/kyeokyeoi.js';
+import { destinationById, ADAPTER_ERROR } from '../destinations.js';
 
 const SOURCE = 'claude';
 const pendingNote = (app) => `Saved as a PENDING proposal only. It becomes a real record only after the owner reviews and approves it in ${app}.`;
@@ -93,6 +94,20 @@ const albumSchema = {
     note: { type: 'string', minLength: 1, maxLength: 500 },
   },
 };
+const ACHIEVEMENT_CATEGORIES = '피트니스(러닝·걷기·등산·사이클링·수영·벤치 프레스·스쿼트·데드리프트·푸시업·턱걸이·플랭크·요가·필라테스) 건강(수면·금주·금연) 영양(요리·수분 섭취·식단 관리) 학습(독서·강의·공부·영어·일본어·중국어·스페인어) 마음 챙김(명상·일기·감사 일기·디지털 디톡스) 여행(국내·해외·캠핑) 문화생활(영화·공연·전시) 창작(글쓰기·음악·그림·사진) 커리어(업무·자격증·네트워킹) 재정(투자·저축·가계부) 기술(코딩·알고리즘) 사회활동(봉사활동·기부·헌혈) 관계(가족·친구) 생활(청소·정리·반려동물), and for milestones and one-off experiences 인생 챕터 / 경험치 / 사건사고 subcategories';
+const activitySchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['category', 'date'],
+  properties: {
+    category: { type: 'string', minLength: 1, maxLength: 60, description: 'The most specific category name for the activity, as the app names it. Defaults: ' + ACHIEVEMENT_CATEGORIES + '. Use a name the user gave for their own category when they did. The owner confirms the category.' },
+    date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Day the activity happened (YYYY-MM-DD); today when the user is reporting it as just done. ' + DATE_RULE },
+    value: { type: 'number', minimum: 0, maximum: 1000000000, description: 'Amount, only when the user gave one (5 for "5km", 30 for "30분", 2 for "2권").' },
+    unit: { type: 'string', minLength: 1, maxLength: 20, description: 'Unit of value as the user said it or its usual short form: km, m, 분, 시간, 회, 세트, 쪽, 권, 원, 만원, L, ml, 잔, 걸음, kg, 개, 명, 곡. Requires value; the app converts units.' },
+    tags: { type: 'array', minItems: 1, maxItems: 10, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 30 }, description: 'One-word Korean keywords for notable details the user mentioned, no "#": places (남산, 한라산, 한강자전거길), kinds (콘서트, 뮤지컬, 자유형, 베이킹), occasions (대회, PB, 완주, 새벽, 입사, 승진, 무지출). Achievements look for such tags.' },
+    memo: { type: 'string', minLength: 1, maxLength: 500, description: 'Short note in the user\'s words. Do not paste the conversation.' },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -104,7 +119,7 @@ export const TOOLS = Object.freeze([
   {
     name: 'get_proposal_status',
     title: 'Check a proposal',
-    description: 'Look up the review status (pending, rejected, confirmed) of any proposal previously made through this connector (food, memory or visit), by the candidate_id a propose tool returned.',
+    description: 'Look up the review status (pending, rejected, confirmed) of any proposal previously made through this connector (any app), by the candidate_id a propose tool returned.',
     inputSchema: statusSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -137,6 +152,13 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_activity_record',
+    title: 'Propose an activity record for 업적 라이브러리',
+    description: 'Propose ONE activity the user actually did, for their 업적 라이브러리 (a personal tracker that turns records — workouts, reading, study, saving, meditation, culture, chores, milestones — into achievements). Use only when the user says they did it, never for plans or wishes. One proposal per activity and day; several activities mean several proposals. It may accompany a proposal to another app for the same event (a concert: a 켜켜이 memory and a 공연 record; a book: a 독서 record). Fill category, the resolved date, value+unit when an amount was given, and tags for notable details. ' + pendingNote('업적 라이브러리') + ' Identical proposals are de-duplicated.',
+    inputSchema: activitySchema,
+    annotations: WRITE,
+  },
+  {
     name: 'propose_memory',
     title: 'Propose a memory for 켜켜이',
     description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Fill the form the way the user would: a short title, the memo, time_text and place_text in their words, plus your resolution of the date (year/month/day) and of the place (region_hint), and the artist/song when music is involved. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
@@ -153,11 +175,7 @@ export const TOOLS = Object.freeze([
 ]);
 
 /** hub:propose covers every destination; per-destination scopes come from older grants. */
-const ACCEPTED_SCOPES = Object.freeze({
-  food: ['hub:propose', 'food:propose'],
-  kyeokyeoi: ['hub:propose', 'kyeokyeoi:propose'],
-  potcast: ['hub:propose'],
-});
+const acceptedScopes = (destination) => ['hub:propose', ...(destinationById(destination)?.legacyProposeScope ? [destinationById(destination).legacyProposeScope] : [])];
 export class ToolInputError extends Error {}
 
 /** Strict argument parsing against a tool schema: unknown fields, wrong types and blanks are input errors. */
@@ -174,6 +192,9 @@ function pick(args, schema) {
     const type = schema.properties[key].type;
     if (type === 'integer') {
       if (!Number.isInteger(value)) throw new ToolInputError(`${key} must be an integer.`);
+      out[key] = value;
+    } else if (type === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw new ToolInputError(`${key} must be a number.`);
       out[key] = value;
     } else if (type === 'boolean') {
       if (typeof value !== 'boolean') throw new ToolInputError(`${key} must be true or false.`);
@@ -200,11 +221,11 @@ async function idempotencyKey(destination, candidateType, payload) {
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const APP = Object.freeze({ food: 'PALATE', kyeokyeoi: '켜켜이', potcast: 'potcast' });
+const appName = (destination) => destinationById(destination)?.app ?? destination;
 
 async function propose(context, destination, candidateType, payload) {
-  if (!ACCEPTED_SCOPES[destination].some((s) => (context.scopes ?? []).includes(s)))
-    throw new ToolInputError(`This Life Hub connection was authorized before ${APP[destination]} was added. Ask the user to reconnect the Life Hub connector in Claude's settings, then try again.`);
+  if (!acceptedScopes(destination).some((s) => (context.scopes ?? []).includes(s)))
+    throw new ToolInputError(`This Life Hub connection was authorized before ${appName(destination)} was added. Ask the user to reconnect the Life Hub connector in Claude's settings, then try again.`);
   const createdAt = new Date(context.now()).toISOString();
   const envelope = {
     hub_version: 1, destination, source: SOURCE,
@@ -218,14 +239,14 @@ async function propose(context, destination, candidateType, payload) {
   } catch (error) {
     if (error instanceof StoreFailure) throw error;
     // Adapter validation failures carry no user data; report them as fixable input errors.
-    if (/Invalid (Life Hub|PALATE|kyeokyeoi|potcast)|Unsupported (PALATE|kyeokyeoi|potcast)/.test(String(error?.message)))
-      throw new ToolInputError(`The proposal did not pass ${APP[destination]} validation. Check field formats and limits (dates as YYYY-MM-DD, a month needs a year, a day needs a month, https links, emotions from the list).`);
+    if (ADAPTER_ERROR.test(String(error?.message)))
+      throw new ToolInputError(`The proposal did not pass ${appName(destination)} validation. Check field formats and limits (dates as YYYY-MM-DD, a month needs a year, a day needs a month, https links, emotions from the list).`);
     throw error;
   }
   const structured = { candidate_id: result.id, status: result.status, duplicate: result.duplicate };
   const text = result.duplicate ?
     `An identical proposal is already in the inbox (candidate_id ${result.id}, status ${result.status}). Nothing new was added. If this is a different occasion, include a date or a distinguishing note.` :
-    `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(APP[destination])}`;
+    `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(appName(destination))}`;
   return { text, structured };
 }
 
@@ -243,6 +264,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'food', 'wish', pick(args, wishSchema));
     } else if (name === 'propose_album_listening') {
       outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
+    } else if (name === 'propose_activity_record') {
+      outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
     } else if (name === 'propose_memory') {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {
@@ -254,7 +277,7 @@ export async function callTool(name, args, context) {
       const found = await getCandidate(context.db, context.ownerId, id, SOURCE);
       if (!found) throw new ToolInputError('No proposal with that candidate_id was made through this connector.');
       const structured = { candidate_id: found.id, destination: found.destination, status: found.status, received_at: found.received_at, reviewed_at: found.reviewed_at ?? null };
-      outcome = { text: `Candidate ${found.id} (${APP[found.destination] ?? found.destination}) is ${found.status}.`, structured };
+      outcome = { text: `Candidate ${found.id} (${appName(found.destination)}) is ${found.status}.`, structured };
     } else {
       return null;
     }
