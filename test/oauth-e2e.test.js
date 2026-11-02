@@ -219,6 +219,7 @@ test('Codex OAuth + PKCE submits independently attributed pending proposals and 
     const arguments_ = { wish_kind: 'try_menu', name: 'Fictional codex pasta' };
     const submitted = await (await mcp(env, tokens.body.access_token, { jsonrpc: '2.0', id: 10, method: 'tools/call',
       params: { name: 'propose_food_wish', arguments: arguments_ } })).json();
+    assert.ok(submitted.result?.structuredContent, JSON.stringify(submitted));
     assert.equal(submitted.result.structuredContent.status, 'pending');
     const id = submitted.result.structuredContent.candidate_id;
     const row = await env.DB.prepare('SELECT source, status, envelope_json FROM inbox WHERE id=?').bind(id).first();
