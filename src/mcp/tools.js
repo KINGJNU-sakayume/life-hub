@@ -125,6 +125,17 @@ const readingSchema = {
     note: { type: 'string', minLength: 1, maxLength: 500, description: 'Short note in the user\'s words, shown to the owner while reviewing.' },
   },
 };
+const stationSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['station', 'date'],
+  properties: {
+    station: { type: 'string', minLength: 1, maxLength: 40, description: 'Subway station name as the user said it, e.g. "망원", "홍대입구역".' },
+    line: { type: 'string', minLength: 1, maxLength: 20, description: 'Line, only if the user said it or the name is shared by different stations (e.g. "2호선", "경의중앙선", "신분당선").' },
+    date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Day of the visit (YYYY-MM-DD). ' + DATE_RULE },
+    note: { type: 'string', minLength: 1, maxLength: 300, description: 'Short note in the user\'s words.' },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -180,6 +191,13 @@ export const TOOLS = Object.freeze([
     title: 'Propose a reading record for 책장',
     description: 'Propose ONE book the user said they finished or are reading, for their 책장 reading log (it tracks per-volume reading state, pages, 1–5 stars and 인생책). Use only for books the user actually read or is reading, never for wishlists or recommendations. 책장 finds the book in its own catalogue; give the Korean edition title and author when you know them, and publisher/volume only if the user said them. A finished book may also deserve a 독서 record for 업적 라이브러리 if the user tracks that. ' + pendingNote('책장') + ' Identical proposals are de-duplicated.',
     inputSchema: readingSchema,
+    annotations: WRITE,
+  },
+  {
+    name: 'propose_station_visit',
+    title: 'Propose a station stamp for 역 도장깨기',
+    description: 'Propose ONE Seoul-area subway station the user actually got off at or visited, for their 역 도장깨기 stamp book (one stamp per station; a random draw alone never counts). Use only when the user says they went to or got off at a station, never for plans, passing through, or where they live or work unless they say they visited. One proposal per station. A visit to a neighbourhood may also deserve a 켜켜이 region visit. ' + pendingNote('역 도장깨기') + ' The owner confirms the station and adds a photo sticker in the app.',
+    inputSchema: stationSchema,
     annotations: WRITE,
   },
   {
@@ -292,6 +310,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
     } else if (name === 'propose_reading_record') {
       outcome = await propose(context, 'letterbookxd', 'reading_record', pick(args, readingSchema));
+    } else if (name === 'propose_station_visit') {
+      outcome = await propose(context, 'sub', 'station_visit', pick(args, stationSchema));
     } else if (name === 'propose_memory') {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {

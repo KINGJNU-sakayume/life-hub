@@ -17,7 +17,9 @@
     // Optional: 업적 라이브러리's Life Hub callback page URL. Empty disables its inbox API.
     "HUB_ACHIEVEMENT_REDIRECT_URI": "REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI",
     // Optional: 책장 (letterbookxd)'s Life Hub callback page URL. Empty disables its inbox API.
-    "HUB_LETTERBOOKXD_REDIRECT_URI": "REPLACE_WITH_YOUR_LETTERBOOKXD_REDIRECT_URI"
+    "HUB_LETTERBOOKXD_REDIRECT_URI": "REPLACE_WITH_YOUR_LETTERBOOKXD_REDIRECT_URI",
+    // Optional: 역 도장깨기 (sub)'s Life Hub callback page URL. Empty disables its inbox API.
+    "HUB_SUB_REDIRECT_URI": "REPLACE_WITH_YOUR_SUB_REDIRECT_URI"
   },
   "d1_databases": [
     {
