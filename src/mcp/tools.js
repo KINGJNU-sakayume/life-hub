@@ -69,6 +69,30 @@ const visitSchema = {
     note: { type: 'string', minLength: 1, maxLength: 500, description: 'Optional short note in the user\'s words.' },
   },
 };
+const trackSchema = {
+  type: 'object', additionalProperties: false, required: ['status'],
+  properties: {
+    title: { type: 'string', minLength: 1, maxLength: 200 },
+    spotify_track_id: { type: 'string', pattern: '^[A-Za-z0-9]{22}$', description: 'From spotify_track_uri "spotify:track:<id>".' },
+    status: { type: 'string', enum: ['listened', 'skipped'] },
+    played_at: { type: 'string', description: 'ISO 8601 time of the play (the history file\'s "ts").' },
+  },
+};
+const albumSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['artist', 'album', 'origin'],
+  properties: {
+    artist: { type: 'string', minLength: 1, maxLength: 200, description: 'Album artist as Spotify names them.' },
+    album: { type: 'string', minLength: 1, maxLength: 200 },
+    spotify_album_id: { type: 'string', pattern: '^[A-Za-z0-9]{22}$', description: 'Only if you actually know it; potcast can find the album itself.' },
+    origin: { type: 'string', enum: ['conversation', 'spotify_history'], description: 'conversation: the user told you. spotify_history: from their Spotify streaming-history file, after they confirmed this album.' },
+    listened_on: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Day of listening (YYYY-MM-DD). ' + DATE_RULE },
+    whole_album: { type: 'boolean', description: 'true when the user said they listened to the whole album (conversation only). Do not send tracks then.' },
+    tracks: { type: 'array', minItems: 1, maxItems: 80, items: trackSchema, description: 'Per-track result, one entry per track (latest play). Required for spotify_history.' },
+    note: { type: 'string', minLength: 1, maxLength: 500 },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -99,6 +123,20 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_album_listening',
+    title: 'Propose an album listening for potcast',
+    description: 'Propose ONE album the user listened to on purpose (digging an artist, or sitting down to listen to an album), for review in potcast. ' +
+      'Music that merely played in the background, on a playlist, radio or autoplay does not count. ' +
+      'origin=conversation: the user told you ("오늘 Blond 다 들었어") — use whole_album, or tracks with their status. ' +
+      'origin=spotify_history: the user gave you their Spotify Extended Streaming History (JSON). Analyse it with code, never by reading rows: use only ts, ms_played, spotify_track_uri, master_metadata_track_name, master_metadata_album_album_name, master_metadata_album_artist_name, reason_start, reason_end, shuffle, skipped, and ignore everything else (IP addresses, user agents, usernames). ' +
+      'Treat as intentional only album sessions: several different tracks of the same album played close together with shuffle off. ' +
+      'A track is listened when reason_end is "trackdone", or it was not skipped and ms_played ≥ 120000; otherwise skipped. Keep one entry per track (latest play). ' +
+      'Before proposing from history, list the candidate albums to the user in small batches (artist, album, date range, listened/total) and propose ONLY the albums they confirm. ' +
+      pendingNote('potcast') + ' Identical proposals are de-duplicated.',
+    inputSchema: albumSchema,
+    annotations: WRITE,
+  },
+  {
     name: 'propose_memory',
     title: 'Propose a memory for 켜켜이',
     description: 'Propose a personal memory for the user\'s 켜켜이 archive (places and times they lived through). Use when the user shares a memory and wants it kept, or asks you to record it; if that is unclear, ask first. Fill the form the way the user would: a short title, the memo, time_text and place_text in their words, plus your resolution of the date (year/month/day) and of the place (region_hint), and the artist/song when music is involved. Emotions only if expressed. A memory does NOT record a visit to its place. ' + pendingNote('켜켜이') + ' Identical proposals are de-duplicated.',
@@ -114,7 +152,12 @@ export const TOOLS = Object.freeze([
   },
 ]);
 
-const DESTINATION_SCOPE = Object.freeze({ kyeokyeoi: 'kyeokyeoi:propose' });
+/** hub:propose covers every destination; per-destination scopes come from older grants. */
+const ACCEPTED_SCOPES = Object.freeze({
+  food: ['hub:propose', 'food:propose'],
+  kyeokyeoi: ['hub:propose', 'kyeokyeoi:propose'],
+  potcast: ['hub:propose'],
+});
 export class ToolInputError extends Error {}
 
 /** Strict argument parsing against a tool schema: unknown fields, wrong types and blanks are input errors. */
@@ -132,6 +175,12 @@ function pick(args, schema) {
     if (type === 'integer') {
       if (!Number.isInteger(value)) throw new ToolInputError(`${key} must be an integer.`);
       out[key] = value;
+    } else if (type === 'boolean') {
+      if (typeof value !== 'boolean') throw new ToolInputError(`${key} must be true or false.`);
+      if (value) out[key] = true;
+    } else if (type === 'array' && schema.properties[key].items?.type === 'object') {
+      if (!Array.isArray(value) || value.length > (schema.properties[key].maxItems ?? 100)) throw new ToolInputError(`${key} must be a list of at most ${schema.properties[key].maxItems} items.`);
+      out[key] = value.map((item) => pick(item, schema.properties[key].items));
     } else if (type === 'array') {
       if (!Array.isArray(value) || value.some((v) => typeof v !== 'string')) throw new ToolInputError(`${key} must be a list of strings.`);
       if (value.length) out[key] = value.map((v) => v.trim());
@@ -151,11 +200,10 @@ async function idempotencyKey(destination, candidateType, payload) {
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const APP = Object.freeze({ food: 'PALATE', kyeokyeoi: '켜켜이' });
+const APP = Object.freeze({ food: 'PALATE', kyeokyeoi: '켜켜이', potcast: 'potcast' });
 
 async function propose(context, destination, candidateType, payload) {
-  const scope = DESTINATION_SCOPE[destination];
-  if (scope && !(context.scopes ?? []).includes(scope))
+  if (!ACCEPTED_SCOPES[destination].some((s) => (context.scopes ?? []).includes(s)))
     throw new ToolInputError(`This Life Hub connection was authorized before ${APP[destination]} was added. Ask the user to reconnect the Life Hub connector in Claude's settings, then try again.`);
   const createdAt = new Date(context.now()).toISOString();
   const envelope = {
@@ -170,7 +218,7 @@ async function propose(context, destination, candidateType, payload) {
   } catch (error) {
     if (error instanceof StoreFailure) throw error;
     // Adapter validation failures carry no user data; report them as fixable input errors.
-    if (/Invalid (Life Hub|PALATE|kyeokyeoi)|Unsupported (PALATE|kyeokyeoi)/.test(String(error?.message)))
+    if (/Invalid (Life Hub|PALATE|kyeokyeoi|potcast)|Unsupported (PALATE|kyeokyeoi|potcast)/.test(String(error?.message)))
       throw new ToolInputError(`The proposal did not pass ${APP[destination]} validation. Check field formats and limits (dates as YYYY-MM-DD, a month needs a year, a day needs a month, https links, emotions from the list).`);
     throw error;
   }
@@ -193,6 +241,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'food', 'meal', payload);
     } else if (name === 'propose_food_wish') {
       outcome = await propose(context, 'food', 'wish', pick(args, wishSchema));
+    } else if (name === 'propose_album_listening') {
+      outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
     } else if (name === 'propose_memory') {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {

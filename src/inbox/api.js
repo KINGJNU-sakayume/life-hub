@@ -2,6 +2,7 @@
  * Destination inbox API, one instance per destination app (each its own OAuth resource):
  *   PALATE    → prefix /palate/v1,    destination food,      scope food:inbox
  *   켜켜이     → prefix /kyeokyeoi/v1, destination kyeokyeoi, scope kyeokyeoi:inbox
+ *   potcast   → prefix /potcast/v1,   destination potcast,   scope potcast:inbox
  *
  * After the owner signs in, the app may:
  *   GET  <prefix>/candidates?status=pending|all&limit=N   read its candidates (in its own v1 shape)
@@ -18,7 +19,7 @@ const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const ENTITY_ID = /^[A-Za-z0-9_-]{1,128}$/;
 /** Candidate types each destination can confirm, i.e. the allowed receipt `entity_type`s. */
-const ENTITY_TYPES = Object.freeze({ food: ['meal', 'wish'], kyeokyeoi: ['memory', 'visit'] });
+const ENTITY_TYPES = Object.freeze({ food: ['meal', 'wish'], kyeokyeoi: ['memory', 'visit'], potcast: ['album_listening'] });
 const HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 const json = (status, value) => new Response(JSON.stringify(value), { status, headers: HEADERS });
 

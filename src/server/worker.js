@@ -82,7 +82,7 @@ export async function handleRequest(request, env) {
     return fail(404, 'Not found');
   } catch (error) {
     if (error instanceof AuthFailure || error instanceof StoreFailure) return fail(error.status, error.message);
-    if (error instanceof SyntaxError || /Invalid Life Hub|Invalid PALATE|Unsupported PALATE|Invalid kyeokyeoi|Unsupported kyeokyeoi/.test(String(error?.message)))
+    if (error instanceof SyntaxError || /Invalid Life Hub|Invalid PALATE|Unsupported PALATE|Invalid kyeokyeoi|Unsupported kyeokyeoi|Invalid potcast|Unsupported potcast/.test(String(error?.message)))
       return fail(400, 'Invalid candidate');
     // Never log untrusted payload, database rows or secrets in error reports.
     return fail(500, 'Internal error');
