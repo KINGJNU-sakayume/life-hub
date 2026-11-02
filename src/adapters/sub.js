@@ -10,7 +10,7 @@
  */
 import { isObject, hasOnly, validDate, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'manual']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual']);
 
 function validVisit(p) {
   return hasOnly(p, ['station', 'line', 'date', 'note']) && requiredText(p.station, 40) && optionalText(p.line, 20) &&
