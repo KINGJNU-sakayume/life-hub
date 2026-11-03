@@ -46,10 +46,31 @@ export const SCOPES = Object.freeze({
 });
 export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast' });
 
-/** Every scope the authorization server knows: MCP proposals, legacy scopes, and destination inboxes. */
+/** Every scope the authorization server knows: MCP proposals, legacy scopes, destination inboxes and sync. */
 export const ALL_SCOPES = Object.freeze([
-  SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope), ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
+  SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope).filter(Boolean),
+  ...DESTINATIONS.filter((d) => d.sync).map((d) => d.sync.scope),
+  ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
 ]);
+
+/**
+ * The OAuth profile of one destination app. An app with an inbox always gets its inbox scope and may get its
+ * sync scope as an opt-in checkbox on the consent page (the owner ticks it with the password, like hub:approve);
+ * a sync-only app (no inbox) gets the sync scope as its one required scope.
+ */
+function destinationProfile(d, redirectUri) {
+  const profile = {
+    id: d.role, role: d.role, redirectUri, resourcePath: d.path,
+    scopes: d.scope ? [d.scope] : [d.sync.scope],
+    allowMissingResource: false, title: d.app, grants: d.grants,
+  };
+  if (d.scope && d.sync) profile.optionalScopes = [{
+    scope: d.sync.scope,
+    label: `${d.app} 데이터를 기기끼리 동기화하는 것도 허용`,
+    detail: '이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요. 내용은 공개 저장소에 올라가지 않아요.',
+  }];
+  return profile;
+}
 
 export function clientProfiles(env) {
   const profiles = [{
@@ -68,10 +89,7 @@ export function clientProfiles(env) {
   }];
   for (const d of DESTINATIONS) {
     const redirectUri = redirectUriFor(env, d);
-    if (redirectUri) profiles.push({
-      id: d.role, role: d.role, redirectUri, resourcePath: d.path, scopes: [d.scope],
-      allowMissingResource: false, title: d.app, grants: d.grants,
-    });
+    if (redirectUri) profiles.push(destinationProfile(d, redirectUri));
   }
   return profiles;
 }
