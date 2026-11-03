@@ -241,7 +241,7 @@ changing Life Hub. Values below were read from this repository and from `@cloudf
 | Token response | `{ access_token, token_type: "bearer", expires_in, refresh_token, scope }`; `scope` is space-separated and is present on both grants |
 | Access token lifetime | 3,600 s (library default; Life Hub sets no override). Use `expires_in`; refresh about 60 s early |
 | Refresh token | Each refresh returns a **new** refresh token: store it. The previous one stays valid until the next refresh (one-step grace for a lost response) |
-| Grant lifetime | **30 days from the consent**, not extended by refreshing (library default `refreshTokenTTL`, no idle TTL set). After that the token endpoint answers `400 invalid_grant`: drop the tokens, show "reconnect", keep sync settings and local data |
+| Grant lifetime | **No practical expiry** (owner decision 2026-11-04): no absolute lifetime (`refreshTokenTTL: undefined`) and a 10-year idle lifetime that restarts on every refresh (`refreshTokenIdleTTL`), set in `src/server/index.js`. Until that change is deployed the library default applies (30 days from consent). Either way, a token endpoint `400 invalid_grant` means: drop the tokens, show "reconnect", keep sync settings and local data |
 | Revoke (disconnect) | `POST <origin>/oauth/token` with `token=<refresh token>`, `token_type_hint=refresh_token`, `client_id` (RFC 7009 form on the token endpoint; it has no `grant_type`). Revoking the refresh token revokes the whole grant. Always `200` with an empty body, also for an unknown token, so the client just drops its local tokens; failure to reach Life Hub is not an error |
 | Client metadata document (CIMD, Client ID Metadata Document) | served at the `client_id` URL itself over public HTTPS (GitHub Pages is fine): `{ client_id: <that URL>, client_name, client_uri, redirect_uris: [<callback>], grant_types: ["authorization_code","refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }` |
 | Callback | must equal the Life Hub variable `HUB_<APP>_REDIRECT_URI` **exactly** (scheme, host, path, trailing slash). Life Hub picks the consent profile by this value; a mismatch shows "not allowed" |
@@ -358,6 +358,5 @@ to receive the sync scope.
 4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter).
 5. Client-side encryption (a passphrase the owner types on each device) is out of scope; it would make a lost
    passphrase equal to lost data and would block the Hub's shape checks. Revisit only if the threat model changes.
-6. Grant lifetime: 30 days from consent means every app needs 「Life Hub 연결」 again each month. Keeping it is the
-   safe default; a longer or sliding lifetime (`refreshTokenTTL` / `refreshTokenIdleTTL` in `src/server/index.js`)
-   is an owner decision.
+6. ~~Grant lifetime.~~ Decided 2026-11-04: no practical expiry (see "Exact values"). Ending access stays possible
+   at any time: 「연결 해제」 in an app revokes its grant, and rotating `HUB_OWNER_ID` invalidates every token.
