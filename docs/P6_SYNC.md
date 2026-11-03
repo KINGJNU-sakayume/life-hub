@@ -1,13 +1,13 @@
-# P6 — Device sync over Life Hub (design; Hub side implemented, apps not yet)
+# P6 — Device sync over Life Hub (design; Hub side deployed, apps not yet)
 
-> **Status: stage 1 (Hub side) implemented in code, not deployed, no app uses it yet.** The migration, `/sync` API,
-> registry support and tests exist in this repository (`migrations/0009_sync.sql`, `src/sync/`, `test/sync.test.js`).
-> Do not describe it as deployed, and do not claim any app syncs through it: stages 2–5 (animan, letterbookxd,
-> elosorter, retiring Supabase) each need a separate explicit task per repository. Two decisions made while
-> implementing: the sync scope of an app that also has an inbox is **opt-in** (a checkbox on the consent page, so
-> reconnecting never silently widens a grant; resolves open question 4), and the version is carried in the response
-> body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차 출처 리소스 공유) would need
-> `Access-Control-Expose-Headers`).
+> **Status: stage 1 (Hub side) deployed on 2026-11-03 (PR #34; migration `0009_sync.sql` applied to the remote D1).
+> No app syncs through it yet.** The migration, `/sync` API, registry support and tests live in this repository
+> (`migrations/0009_sync.sql`, `src/sync/`, `test/sync.test.js`). Do not claim any app syncs through it until its own
+> stage lands: stages 2–5 (animan, letterbookxd, elosorter, retiring Supabase) each need a separate explicit task per
+> repository. Two decisions made while implementing: the sync scope of an app that also has an inbox is **opt-in** (a
+> checkbox on the consent page, so reconnecting never silently widens a grant; resolves open question 4), and the
+> version is carried in the response body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차
+> 출처 리소스 공유) would need `Access-Control-Expose-Headers`).
 
 ## 1. Goal
 
@@ -135,6 +135,13 @@ Progress becomes **v2**, an item map instead of an array, so un-marking can trav
 - `done: false` entries are tombstones, kept **180 days**, then dropped when writing.
 - A device that has not synced for more than 180 days must not auto-merge: it uses the existing manual import
   preview instead.
+- Existing **local** v1 progress (no `exportedAt`) converts once to v2 with every id `done: true` and `at` = the Unix
+  epoch (`1970-01-01T00:00:00.000Z`), so any real mark or un-mark from another device wins over it. The v1 value stays
+  in storage untouched as the rollback copy.
+- Every path that changes progress (toggle, "up to here", bulk marks, approving a Life Hub proposal, manual import
+  `merge`/`replace`) writes stamped v2 entries; an item a `replace` import removes becomes a tombstone.
+- Tombstone pruning depends on the current time, so it happens only just before writing, never inside the merge
+  function (the merge must stay pure for the commutativity/associativity tests).
 - v1 backup files stay importable (every id becomes `done: true`, `at = exportedAt`); the v1 *export* stays available
   and simply omits tombstones.
 
@@ -176,6 +183,15 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
   `visibilitychange` → hidden. Never push while a merge is in progress.
 - Loop: `GET` → merge → `PUT If-Match`; on `412`, repeat, at most 3 times, then show "will retry".
 - Treat a `412` whose current `sha256` equals the hash of what you just sent as success (replay of a committed write).
+- A `412` whose `current` is `null` means the document was deleted: write again with `If-None-Match: *`.
+- Before retrying a `PUT` whose response never arrived, read `/sync/meta` and compare its `sha256` with the hash of
+  the exact UTF-8 bytes sent (keep the sent string; re-serialising may change the hash).
+- A sync route answers `403` with `WWW-Authenticate: … error="insufficient_scope"` when the token has the inbox
+  scope only (the owner did not tick the sync checkbox). Clients must show "sync not allowed, reconnect" and **keep
+  the token**: the inbox still works with it. Other `403`s (role or owner mismatch) mean the grant is unusable.
+- `X-Device-Label` must be 1–40 printable ASCII characters after trimming; an empty label is a `400`, so omit the
+  header instead.
+- `400`, `415` and `428` are client bugs: stop and report, do not loop. `413`: tell the owner and stop automatic push.
 - Keep the manual JSON export/import. It is the disaster-recovery path and works with no Life Hub at all.
 - The free-plan daily D1 write allowance was **not verified** for this design. Confirm it on Cloudflare's current
   pricing/limits page before enabling automatic push, and keep the debounce.
