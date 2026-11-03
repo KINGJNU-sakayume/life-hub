@@ -23,6 +23,7 @@ import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../aut
 import { DESTINATIONS, redirectUriFor, appUrlFor } from '../destinations.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
 import { handleInboxRequest } from '../inbox/api.js';
+import { handleSyncRequest } from '../sync/api.js';
 import { handleSpotify } from '../spotify/routes.js';
 import { pollSpotify } from '../spotify/sync.js';
 import { deleteExpiredTickets } from './store.js';
@@ -63,18 +64,32 @@ export const mcpHandler = {
   },
 };
 
-function inboxHandler(role, scope, destination, prefix) {
+/**
+ * One handler per destination app: `<path>/v1/sync*` is the device sync API and needs the app's sync scope
+ * (an inbox-only token gets a step-up error); everything else under `<path>/v1` is the inbox API and needs
+ * the inbox scope. A sync-only app has no inbox, so its other paths are 404.
+ */
+function destinationHandler(d) {
+  const prefix = d.path + '/v1';
+  const syncPrefix = prefix + '/sync';
   return {
     async fetch(request, env, ctx) {
-      return guard(env, ctx, role, scope) ?? handleInboxRequest(request, {
-        db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination, prefix,
+      const path = new URL(request.url).pathname;
+      if (d.sync && (path === syncPrefix || path.startsWith(syncPrefix + '/'))) {
+        return guard(env, ctx, d.role, d.sync.scope) ?? handleSyncRequest(request, {
+          db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: d.id, prefix: syncPrefix,
+          limits: { maxBytes: d.sync.maxBytes, keep: d.sync.keep },
+        });
+      }
+      if (!d.scope) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
+      return guard(env, ctx, d.role, d.scope) ?? handleInboxRequest(request, {
+        db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: d.id, prefix,
       });
     },
   };
 }
-/** One inbox handler per destination app, keyed by destination id. */
-export const inboxHandlers = Object.freeze(Object.fromEntries(
-  DESTINATIONS.map((d) => [d.id, inboxHandler(d.role, d.scope, d.id, d.path + '/v1')])));
+/** One handler per destination app, keyed by destination id (the inbox handlers' historical name). */
+export const inboxHandlers = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, destinationHandler(d)])));
 export const palateHandler = inboxHandlers.food;
 
 export function createServers(origin) {
@@ -106,7 +121,9 @@ export function createServers(origin) {
   });
   const inboxes = new Map(DESTINATIONS.map((d) => [d.id, new OAuthResourceServer({
     resourceMetadata: { resource: origin + d.path, authorization_servers: [origin] },
-    requiredScopes: [d.scope], validateToken, handler: inboxHandlers[d.id],
+    // The resource's base scope: the inbox scope, or the sync scope for a sync-only app. Sync routes of an app
+    // with an inbox check their own scope again in destinationHandler.
+    requiredScopes: [d.scope ?? d.sync.scope], validateToken, handler: inboxHandlers[d.id],
   })]));
   return { authorizationServer, mcp, inboxes };
 }

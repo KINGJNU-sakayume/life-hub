@@ -8,6 +8,13 @@
  * `<path>/v1`. Without the redirect variable the app's profile and API are off.
  * Optional: `card` (a Claude conversation card; `approve` only once the app syncs approved candidates) and
  * `refKinds` (reference lists the app may upload for card pickers).
+ *
+ * Optional `sync` (docs/P6_SYNC.md): the app may keep one JSON document on this Hub, served at
+ * `<path>/v1/sync`. `scope` is its own OAuth scope; `maxBytes` (default 1 MiB) and `keep` (default 10 versions)
+ * override the limits in src/sync/api.js. An app with an inbox (`scope`) gets the sync scope as an opt-in
+ * checkbox on the consent page; a SYNC-ONLY app (no `scope`, `types` or `adapter`, e.g. elosorter) has no
+ * inbox, candidates or card, and its sync scope is required. Sync-only ids must never be added to the
+ * candidate destinations in src/core/candidates.js.
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
@@ -58,6 +65,8 @@ export const DESTINATIONS = Object.freeze([
     card: { approve: true },
     // The app's catalogue: works (id, title, author) and editions (id, publisher, "workId/volume").
     refKinds: ['works', 'editions'],
+    // Reading logs sync as one document (the catalogue override stays on the device).
+    sync: { scope: 'letterbookxd:sync' },
     grants: 'Life Hub 수신함의 <strong>독서 기록 후보를 가져오고</strong>, 책 목록(제목·지은이·판본)을 공유하고, 책장에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
@@ -76,6 +85,8 @@ export const DESTINATIONS = Object.freeze([
     redirectVar: 'HUB_ANIMAN_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
     // Progress card; the app marks `approved` progress since its stage-6 release.
     card: { approve: true },
+    // Watch progress syncs as one document.
+    sync: { scope: 'animan:sync' },
     // The app's catalogue: series id, title and accent colour, for the card's title list.
     refKinds: ['series'],
     grants: 'Life Hub 수신함의 <strong>애니·만화 진행 후보를 가져오고</strong>, 작품 목록(제목)을 공유하고, AniMan에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
@@ -88,6 +99,13 @@ export const DESTINATIONS = Object.freeze([
     // The mission list and today's state (resting missions, a mission already drawn today) the app shares.
     refKinds: ['missions', 'state'],
     grants: 'Life Hub 수신함의 <strong>오늘의 미션 후보를 가져오고</strong>, 미션 목록과 오늘 상태(쉬는 미션·오늘 뽑은 미션)를 공유하고, 일기 룰렛에서 정한 결과를 돌려보낼 수 있어요. 일기 내용은 보내지 않아요.',
+  },
+  {
+    // Sync-only: no inbox, candidates or card. The session lives on this Hub's private database.
+    id: 'elosorter', app: 'ELO Sorter', role: 'elosorter', path: '/elosorter',
+    redirectVar: 'HUB_ELOSORTER_REDIRECT_URI', label: 'elosorter',
+    sync: { scope: 'elosorter:sync' },
+    grants: 'ELO Sorter의 세션(곡·분류·비교 기록)을 이 Life Hub의 비공개 저장소에 <strong>보관하고 다른 기기에서 불러올 수</strong> 있어요. 내용은 공개 저장소에 올라가지 않아요.',
   },
 ]);
 

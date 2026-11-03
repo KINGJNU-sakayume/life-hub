@@ -1,8 +1,13 @@
-# P6 — Device sync over Life Hub (design, NOT implemented)
+# P6 — Device sync over Life Hub (design; Hub side implemented, apps not yet)
 
-> **Status: proposed.** Nothing in this document exists in code. Do not describe it as deployed, and do not fake an
-> API for it (AGENTS.md, "Before any remote synchronization…"). This file is the design that rule asks for.
-> Implementing it needs a separate explicit task per repository.
+> **Status: stage 1 (Hub side) implemented in code, not deployed, no app uses it yet.** The migration, `/sync` API,
+> registry support and tests exist in this repository (`migrations/0009_sync.sql`, `src/sync/`, `test/sync.test.js`).
+> Do not describe it as deployed, and do not claim any app syncs through it: stages 2–5 (animan, letterbookxd,
+> elosorter, retiring Supabase) each need a separate explicit task per repository. Two decisions made while
+> implementing: the sync scope of an app that also has an inbox is **opt-in** (a checkbox on the consent page, so
+> reconnecting never silently widens a grant; resolves open question 4), and the version is carried in the response
+> body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차 출처 리소스 공유) would need
+> `Access-Control-Expose-Headers`).
 
 ## 1. Goal
 
@@ -224,6 +229,6 @@ to receive the sync scope.
 1. How large is a real elosorter session (tracks × fields)? Decides gzip/R2 in stage 4.
 2. Daily D1 write allowance on the free plan (not verified here).
 3. Is 180 days the right tombstone retention for a device that may sit in a drawer (e.g. an old phone)?
-4. Should the sync scope be requested at the first connection, or only when the app's sync toggle is switched on?
+4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter).
 5. Client-side encryption (a passphrase the owner types on each device) is out of scope; it would make a lost
    passphrase equal to lost data and would block the Hub's shape checks. Revisit only if the threat model changes.

@@ -43,6 +43,7 @@ Settings → Secrets and variables → Actions.
 | `HUB_SUB_REDIRECT_URI` | optional (P3): 역 도장깨기 (sub)'s Life Hub callback page, e.g. `https://<user>.github.io/sub/lifehub/` |
 | `HUB_LETTERBOOKXD_REDIRECT_URI` | optional (P3): 책장 (letterbookxd)'s Life Hub callback page, e.g. `https://<user>.github.io/letterbookxd/lifehub/` |
 | `HUB_ACHIEVEMENT_REDIRECT_URI` | optional (P3): 업적 라이브러리's Life Hub callback page, e.g. `https://<user>.github.io/achievement/lifehub/` |
+| `HUB_ELOSORTER_REDIRECT_URI` | optional (P6): ELO Sorter's Life Hub callback page, e.g. `https://<user>.github.io/elosorter/lifehub/`. A sync-only app (no inbox): it keeps its session on the Hub. Apply migration 0009 before using it. |
 
 Optional: Settings → Environments → `production` → add yourself as a required reviewer so every deploy waits for a tap of approval.
 
