@@ -27,6 +27,17 @@ Claude now gets one scope, `hub:propose`, which covers every destination. Grants
 
 Migration `0005` drops the destination CHECK (adapters validate every insert), so new destinations need no table rebuild.
 
+## Card and review_listening (cards stage 7)
+
+- The potcast card shows one album (title, artist, day, where it came from) and every proposed track with 들음 /
+  건너뜀; 「수정」 changes track statuses and the note only (album, artist, Spotify IDs and play times stay).
+- **`review_listening`** (`{ candidate_id? }`): albums the hourly Spotify collection proposes never pass through a
+  conversation, so this tool shows one pending album at a time as that card — Spotify-collected first, oldest first —
+  with how many more are waiting. It only reads (plus the card's ticket). ChatGPT/Codex get the text.
+- `card_approve` keeps a last check in the app when the album has neither a Spotify album ID nor a track ID (potcast
+  cannot find it exactly). potcast records an approved album when the library opens if it resolves exactly and every
+  track matched, with the setting 「Claude에서 승인된 항목 자동 반영」 (default on); otherwise it waits in the drawer.
+
 ## Setup
 
 1. Variable `HUB_POTCAST_REDIRECT_URI` = `https://<user>.github.io/potcast/lifehub/` (potcast's Life Hub callback page; the app root is taken by its Spotify sign-in).
