@@ -156,13 +156,31 @@ committing `catalog.json`).
   "tombstones": [ { "id": "…", "targetKey": "volume:…", "deletedAt": "…", "supersededBy": "…" } ] }
 ```
 
-- Same `id`: the record with the later `updatedAt` wins; a tie goes to the larger canonical-JSON string, so every
-  device picks the same one.
-- A tombstone and a record with the same `id`: the later of `deletedAt` and `updatedAt` wins.
-- `same-target` (different ids, same `targetKey`, typically two devices logging the same volume offline): keep the
-  record with the later `updatedAt`, tombstone the other with `supersededBy`.
-- Life Hub receipts store a log id as `entity_id`. After a `same-target` merge that id may no longer exist; receipts
-  are history, so apps must not treat an unresolved `entity_id` as an error.
+Merge is **last-writer-wins per target** (`targetKey`: `volume:<volumeId>`, `set:<editionSetId>`,
+`series:<seriesId>`). Every record and every tombstone is an *event* of its target, timed by `updatedAt` (record) or
+`deletedAt` (tombstone). This one rule covers the same-id, tombstone and `same-target` cases and is commutative,
+associative and idempotent, because the result depends only on the set of events seen:
+
+1. Per `id`, keep one record version (later `updatedAt`; tie → larger canonical-JSON string) and one tombstone
+   (later `deletedAt`; tie → larger canonical-JSON string).
+2. Per target, the **winner** is the latest event. Ties: a record beats a tombstone (adding is the lesser harm, as
+   in animan), then the larger canonical-JSON string wins.
+3. Winner is a record → it is the target's only live record. Every other id of that target becomes (or stays) a
+   tombstone with `deletedAt` = the winner's `updatedAt` and `supersededBy` = the winner's id.
+   Winner is a tombstone → the target has no live record; every id of it becomes a tombstone with `deletedAt` = the
+   winner's `deletedAt` and `supersededBy: null`. (So deleting a volume's log on one device also removes an older
+   log of the same volume that another device created offline.)
+4. Derived tombstones never carry a time later than the winner, so they never change a later merge's winner.
+
+"Canonical JSON" = keys sorted, no whitespace, `pickLogRecord` fields only. A record whose `targetKey` cannot be
+computed, or a tombstone without `targetKey`, is dropped by the merge (and reported by the import preview).
+
+Every local change stamps `updatedAt` with the clock rule above, including metadata edits (`createdAt`, rating,
+like) and the completion cascade. Every local delete (single log, all logs of a work, a cascade removing a set or
+series completion, an `overwrite` import) writes a tombstone instead of only removing the row. After a merge is
+applied, the app runs its normal completion cascade; anything that changes is an ordinary local edit with a fresh
+stamp, and two devices that both re-derive the same completion converge through rule 3.
+
 - Tombstones are kept 180 days, same rule as above.
 
 ### elosorter
@@ -172,9 +190,17 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
 
 - The app stores `syncVersion` (the version its local copy was based on). Upload with `If-Match: "<syncVersion>"`.
 - On `412`, the app enters its existing `conflict` state and asks "use the cloud version / overwrite with this
-  device". It never auto-uploads in `conflict`.
+  device". It never auto-uploads in `conflict`. "Overwrite" is a `PUT` with `If-Match` set to the version the
+  conflict showed, so a third write in between is still caught.
 - Optional later improvement: union the append-only `matches` list automatically when both sides only added.
 - `ownerId` (Spotify user id) stays as the existing "blocked: another account's session" sanity check.
+- **Size first.** The document must stay JSON with `version: 2` and a `tracks` array (the Hub's shape check), so it is
+  not compressed. The sync document leaves out fields the app recomputes on load (per its own comments: `rating`,
+  `sigma` and other derived values) and nothing else. The app shows the document's UTF-8 size; over **900 KiB**
+  (headroom under the 1 MiB cap and the Worker's per-request CPU time) it does not sync automatically and tells the
+  owner. Whether to add gzip or R2 is an owner decision after measuring a real session (open question 1).
+- Supabase: while Life Hub sync is on and has succeeded once, the app stops writing `elo_state`. Reading it stays
+  available for the one-time copy of stage 5. The manual JSON file backup stays.
 
 ## 7. Client behaviour (all apps)
 
@@ -237,7 +263,7 @@ to receive the sync scope.
 | 1 | Hub: migration, `/sync` API, registry support, tests. No app changes | `npm run check` green; deployed; manual `curl` round trip with a throwaway destination |
 | 2 | **animan** (pilot): v2 progress format, tombstones, sync client, reconnect | Two browsers converge, including an un-mark |
 | 3 | **letterbookxd**: logs + tombstones, `same-target` rule | Offline edit on two devices merges without losing either |
-| 4 | **elosorter**: measure the real session size first. Over 1 MiB → gzip the document before upload, and only then consider R2 (not bound today; R2's free tier is 10 GB-month) | Supabase `elo_state` no longer written |
+| 4 | **elosorter**: measure the real session size first (section 6). Over the limit → owner decides between gzip (needs a Hub shape-check change) and R2 (not bound today; R2's free tier is 10 GB-month) | Supabase `elo_state` no longer written |
 | 5 | Retire Supabase for elosorter: one-time copy of the cloud session into Life Hub, then remove the `anon read/write` policy | The anon key can no longer read or write the table |
 
 ## 11. Open questions
