@@ -38,6 +38,8 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'potcast', app: 'potcast', role: 'potcast', path: '/potcast', scope: 'potcast:inbox',
     redirectVar: 'HUB_POTCAST_REDIRECT_URI', types: ['album_listening'], adapter: toPotcastCandidate, label: 'potcast',
+    // Album card (track by track); the app records `approved` albums since its stage-7 release.
+    card: { approve: true },
     grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, potcast에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {

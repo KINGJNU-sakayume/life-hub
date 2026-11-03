@@ -9,6 +9,7 @@ import { DIARYROULETTE_CARD_URI, DIARYROULETTE_CARD_HTML } from './diaryroulette
 import { ACHIEVEMENT_CARD_URI, ACHIEVEMENT_CARD_HTML } from './achievement.js';
 import { SUB_CARD_URI, SUB_CARD_HTML } from './sub.js';
 import { ANIMAN_CARD_URI, ANIMAN_CARD_HTML } from './animan.js';
+import { POTCAST_CARD_URI, POTCAST_CARD_HTML } from './potcast.js';
 import { CARD_MIME, CARD_RESOURCE_META } from './shell.js';
 
 const CARDS = Object.freeze({
@@ -18,6 +19,7 @@ const CARDS = Object.freeze({
   achievement: { uri: ACHIEVEMENT_CARD_URI, html: ACHIEVEMENT_CARD_HTML, name: 'life-hub-card-achievement', title: '업적 라이브러리 카드', labels: { activity_record: '활동 기록', achievement_definition: '새 업적' } },
   sub: { uri: SUB_CARD_URI, html: SUB_CARD_HTML, name: 'life-hub-card-sub', title: '역 도장깨기 카드', labels: { station_visit: '역 방문', station_draw: '역 뽑기' } },
   animan: { uri: ANIMAN_CARD_URI, html: ANIMAN_CARD_HTML, name: 'life-hub-card-animan', title: 'AniMan 진행 카드', labels: { media_progress: '진행 기록' } },
+  potcast: { uri: POTCAST_CARD_URI, html: POTCAST_CARD_HTML, name: 'life-hub-card-potcast', title: 'potcast 앨범 카드', labels: { album_listening: '앨범 감상' } },
 });
 
 export const cardFor = (destination) => CARDS[destination] ?? null;

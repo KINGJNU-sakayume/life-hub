@@ -88,3 +88,62 @@ test('migration 0005 opens destinations without losing data or history', () => {
     assert.throws(() => db.exec("DELETE FROM inbox WHERE id='a'"), /FOREIGN KEY/);
   } finally { db.close(); }
 });
+
+/* ---------- Cards stage 7: the potcast album card and review_listening ---------- */
+
+test('review_listening shows one pending album as a card (Spotify-collected first), and the owner edits tracks there', async () => {
+  const { insertCandidate } = await import('../src/server/store.js');
+  const { needsAppReview } = await import('../src/mcp/tools.js');
+  const ALBUM = 'A'.repeat(22);
+  const sync = (key, at) => ({
+    hub_version: 1, destination: 'potcast', source: 'spotify', source_ref: 'spotify-sync:2026-11-01', idempotency_key: key, created_at: at, candidate_type: 'album_listening',
+    payload: { artist: 'Synthetic Artist', album: 'Imaginary Album', spotify_album_id: ALBUM, origin: 'spotify_sync', listened_on: '2026-11-01',
+      tracks: [{ spotify_track_id: 'a'.repeat(22), title: 'First Song', status: 'listened', played_at: at }, { spotify_track_id: 'b'.repeat(22), title: 'Second Song', status: 'skipped', played_at: at }] },
+  });
+  const db = new TestD1();
+  const claude = { ...ctx(db, ['hub:propose', 'hub:approve']), source: 'claude', appUrls: {} };
+  try {
+    const empty = await callTool('review_listening', {}, claude);
+    assert.equal(empty.structuredContent.status, 'empty');
+    assert.equal(empty._meta, undefined);
+
+    await callTool('propose_album_listening', { artist: 'Synthetic Band', album: 'Talked About', origin: 'conversation', whole_album: true }, claude);
+    const older = await insertCandidate(db, 'demo-owner', sync('spsync-' + ALBUM + '-1', '2026-11-01T01:00:00.000Z'), '2026-11-01T03:00:00.000Z');
+    await insertCandidate(db, 'demo-owner', sync('spsync-' + ALBUM + '-2', '2026-11-01T05:00:00.000Z'), '2026-11-01T07:00:00.000Z');
+
+    const r = await callTool('review_listening', {}, claude);
+    assert.equal(r.structuredContent.candidate_id, older.id, 'Spotify-collected and oldest first');
+    assert.equal(r.structuredContent.remaining, 2);
+    assert.equal(r.structuredContent.card.label, '앨범 감상');
+    assert.match(r.content[0].text, /Imaginary Album.*1 listened, 1 skipped/);
+    const ticket = r._meta['life-hub/card'].ticket;
+    assert.ok(!JSON.stringify(r.content).includes(ticket) && !JSON.stringify(r.structuredContent).includes(ticket));
+
+    // The owner marks the skipped track as listened in the card, then approves.
+    const payload = structuredClone(r.structuredContent.card.payload);
+    payload.tracks[1].status = 'listened';
+    const edited = await callTool('card_edit', { candidate_id: older.id, ticket, revision: 0, payload }, claude);
+    assert.deepEqual(edited.structuredContent.card.payload.tracks.map((t) => t.status), ['listened', 'listened']);
+    // An edit that breaks the contract (a spotify_sync track without its ID) changes nothing.
+    const broken = structuredClone(payload); delete broken.tracks[0].spotify_track_id;
+    const refused = await callTool('card_edit', { candidate_id: older.id, ticket, revision: 1, payload: broken }, claude);
+    assert.equal(refused.isError, true);
+    const approved = await callTool('card_approve', { candidate_id: older.id, ticket, revision: 1 }, claude);
+    assert.equal(approved.structuredContent.card.status, 'approved');
+    assert.equal(approved.structuredContent.card.needs_app_review, false);
+
+    // The next call shows the next album; a named one can be shown directly.
+    const next = await callTool('review_listening', {}, claude);
+    assert.notEqual(next.structuredContent.candidate_id, older.id);
+    assert.equal(next.structuredContent.remaining, 1);
+    assert.equal((await callTool('review_listening', { candidate_id: older.id }, claude)).isError, true, 'decided albums are not shown');
+
+    // ChatGPT gets the text, no card.
+    const gpt = await callTool('review_listening', {}, { ...ctx(db), source: 'chatgpt' });
+    assert.equal(gpt.structuredContent.card, undefined);
+    assert.equal(gpt._meta, undefined);
+  } finally { db.close(); }
+  assert.equal(needsAppReview('potcast', 'album_listening', { artist: 'x', album: 'y', origin: 'conversation', whole_album: true }), true, 'nothing to find the album with');
+  assert.equal(needsAppReview('potcast', 'album_listening', { artist: 'x', album: 'y', origin: 'conversation', tracks: [{ spotify_track_id: 'a'.repeat(22), status: 'listened' }] }), false);
+  assert.equal(needsAppReview('potcast', 'album_listening', { artist: 'x', album: 'y', origin: 'conversation', whole_album: true, spotify_album_id: 'A'.repeat(22) }), false);
+});

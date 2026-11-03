@@ -11,7 +11,7 @@
  */
 import { canonical } from '../core/candidates.js';
 import {
-  insertCandidate, getCandidate, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate, getDestinationRefs, findCandidateByKey,
+  insertCandidate, getCandidate, listDestinationCandidates, StoreFailure, finalEnvelope, issueCardTicket, readCardCandidate, getDestinationRefs, findCandidateByKey,
   editCardCandidate, approveCardCandidate, rejectCardCandidate,
 } from '../server/store.js';
 import { cardFor } from './cards/index.js';
@@ -179,6 +179,10 @@ const mediaSchema = {
     note: { type: 'string', minLength: 1, maxLength: 300, description: 'Short note in the user\'s words.' },
   },
 };
+const reviewSchema = {
+  type: 'object', additionalProperties: false, required: [],
+  properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$', description: 'A specific album returned by an earlier review_listening call; omit for the next one.' } },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -243,6 +247,13 @@ export const TOOLS = Object.freeze([
     description: 'Propose ONE new custom achievement (a goal) when the user asks to create, add or set one in 업적 라이브러리 ("러닝 누적 100km 업적 만들어줘", "30일 연속 독서 업적 추가해줘"). Never for an activity they did (use propose_activity_record) and never unasked. Pick the tier by difficulty and the simplest fitting condition. Its progress counts the owner\'s existing records too. ' + pendingNote('업적 라이브러리') + ' Identical proposals are de-duplicated.',
     inputSchema: definitionSchema,
     annotations: WRITE,
+  },
+  {
+    name: 'review_listening',
+    title: 'Review listened albums for potcast',
+    description: 'Show ONE album listening waiting for review in potcast (albums Life Hub collected from Spotify every hour, or ones proposed earlier), when the user asks to check or review the albums they listened to. The owner checks each track (listened / skipped) and approves in the card or in potcast. Call again to show the next album. Never approve, reject or change tracks on the owner\'s behalf.',
+    inputSchema: reviewSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'propose_reading_record',
@@ -322,7 +333,7 @@ export const CARD_TOOLS = Object.freeze([
 ]);
 const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
-  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
+  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', review_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
   propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_station_draw: 'sub', propose_media_progress: 'animan',
   propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette',
 });
@@ -408,6 +419,8 @@ export function needsAppReview(destination, type, payload, refs) {
     const hits = (refs?.categories ?? []).filter((c) => c.label === payload.category).length;
     return type === 'achievement_definition' && payload.category === undefined ? false : hits !== 1;
   }
+  // potcast finds the album on Spotify by its ID or a track ID; without either it must ask.
+  if (destination === 'potcast') return !payload.spotify_album_id && !(payload.tracks ?? []).some((t) => t.spotify_track_id);
   if (destination === 'animan') return seriesMatches(payload.title, refs?.series).length !== 1;
   if (destination === 'sub' && type === 'station_visit') return stationMatches(payload.station, refs?.stations).length !== 1;
   if (destination === 'kyeokyeoi') {
@@ -549,15 +562,44 @@ async function propose(context, destination, candidateType, payload, extra) {
   let text = result.duplicate ?
     `An identical proposal is already in the inbox (candidate_id ${result.id}, status ${result.status}). Nothing new was added. If this is a different occasion, include a date or a distinguishing note.` :
     `Proposal saved for review (candidate_id ${result.id}, status pending). ${pendingNote(appName(destination))}`;
+  return withCard(context, result, text, structured, extra);
+}
+
+/**
+ * Adds the Life Hub card for a candidate (Claude only): its view in structuredContent and, with hub:approve
+ * and while pending, a single-use ticket in the result _meta — never in content or structuredContent.
+ */
+async function withCard(context, rec, text, structured, extra) {
   let meta;
-  if (isClaude(context) && cardFor(destination)) {
-    structured.card = cardView(result, context, undefined, extra?.(result));
-    // The ticket goes only to the card (result _meta), never into content or structuredContent.
-    if (canUseCards(context) && result.status === 'pending')
-      meta = { 'life-hub/card': { ticket: (await issueCardTicket(context.db, context.ownerId, result.id, context.now())).ticket } };
+  if (isClaude(context) && cardFor(rec.destination)) {
+    structured.card = cardView(rec, context, undefined, extra?.(rec));
+    if (canUseCards(context) && rec.status === 'pending')
+      meta = { 'life-hub/card': { ticket: (await issueCardTicket(context.db, context.ownerId, rec.id, context.now())).ticket } };
     text += ' The owner may review it in the Life Hub card; never approve or reject on their behalf.';
   }
   return { text, structured, meta };
+}
+
+/**
+ * potcast: show one pending album (Spotify-collected first, oldest first) as a card, so albums the hourly
+ * collection found can be reviewed in a conversation. Reads only; the card's ticket is the one write.
+ */
+async function reviewListening(context, args) {
+  const { candidate_id: wanted } = pick(args ?? {}, reviewSchema);
+  if (wanted !== undefined && !/^[0-9a-f-]{36}$/.test(wanted)) throw new ToolInputError('candidate_id must be one returned by review_listening.');
+  const pending = (await listDestinationCandidates(context.db, context.ownerId, 'potcast', 'pending', 100))
+    .sort((a, b) => Number(b.source === 'spotify') - Number(a.source === 'spotify') || (a.received_at < b.received_at ? -1 : a.received_at > b.received_at ? 1 : 0));
+  if (!pending.length) return { text: 'No album listening is waiting for review in potcast.', structured: { status: 'empty', remaining: 0 } };
+  const rec = wanted ? pending.find((r) => r.id === wanted) : pending[0];
+  if (!rec) throw new ToolInputError('That album is not waiting for review (it may be decided already).');
+  const p = finalEnvelope(rec).payload;
+  const listened = p.whole_album ? 'the whole album' : `${p.tracks.filter((t) => t.status === 'listened').length} listened, ${p.tracks.filter((t) => t.status === 'skipped').length} skipped`;
+  const remaining = pending.length - 1;
+  const from = rec.source === 'spotify' ? 'collected from Spotify' : 'proposed in a conversation';
+  const text = `"${p.album}" by ${p.artist}${p.listened_on ? ` (${p.listened_on})` : ''}, ${from}: ${listened}. ` +
+    (remaining ? `${remaining} more album(s) are waiting; call review_listening again to show the next. ` : 'No other album is waiting. ') +
+    'Do not change track statuses yourself.';
+  return withCard(context, rec, text, { candidate_id: rec.id, status: rec.status, remaining });
 }
 
 /** Uniform random index without modulo bias. */
@@ -674,6 +716,8 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
     } else if (name === 'propose_activity_record') {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
+    } else if (name === 'review_listening') {
+      outcome = await reviewListening(context, args);
     } else if (name === 'propose_achievement') {
       outcome = await propose(context, 'achievement', 'achievement_definition', pick(args, definitionSchema));
     } else if (name === 'propose_reading_record') {
