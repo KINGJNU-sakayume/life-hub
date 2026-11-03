@@ -49,3 +49,58 @@ test('propose_reading_record stores a pending 책장 candidate', async () => {
     }
   } finally { db.close(); }
 });
+
+/* ---------- Cards stage 6: the 책장 reading card ---------- */
+
+test('the 책장 card approves with the shared catalogue; the book, publisher and volume must be clear', async () => {
+  const { putDestinationRefs } = await import('../src/server/store.js');
+  const { bookMatch, needsAppReview } = await import('../src/mcp/tools.js');
+  const W = (n) => `00000000-0000-4000-8000-00000000000${n}`;
+  const WORKS = [
+    { id: W(1), label: '가상의 책', group: '가상 작가' },
+    { id: W(2), label: '가상의 대하소설', group: '다른 작가' },
+    { id: W(3), label: '같은 제목', group: '작가 갑' },
+    { id: W(4), label: '같은 제목', group: '작가 을' },
+  ];
+  const EDITIONS = [
+    { id: 'e1', label: '가상출판', group: W(1) + '/1' },
+    { id: 'e2', label: '가상출판', group: W(2) + '/1' }, { id: 'e3', label: '가상출판', group: W(2) + '/2' },
+    { id: 'e4', label: '다른출판', group: W(2) + '/1' },
+    { id: 'e5', label: '갑출판', group: W(3) + '/1' }, { id: 'e6', label: '을출판', group: W(4) + '/1' },
+  ];
+  const refs = { works: WORKS, editions: EDITIONS };
+  const ok = (payload) => bookMatch(payload, refs);
+  assert.equal(ok({ title: '가상의책' }), true, 'one work, one edition; spacing does not matter');
+  assert.equal(ok({ title: '가상의 대하소설' }), false, 'two publishers');
+  assert.equal(ok({ title: '가상의 대하소설', publisher: '가상 출판' }), false, 'two volumes there');
+  assert.equal(ok({ title: '가상의 대하소설', publisher: '가상출판', volume: 2 }), true);
+  assert.equal(ok({ title: '가상의 대하소설', publisher: '다른출판' }), true, 'one volume there');
+  assert.equal(ok({ title: '가상의 대하소설', publisher: '가상출판', volume: 9 }), false, 'no such volume');
+  assert.equal(ok({ title: '같은 제목' }), false, 'two works');
+  assert.equal(ok({ title: '같은 제목', author: '작가 을' }), true, 'the author tells them apart');
+  assert.equal(ok({ title: '가상' }), false, 'no guessing from a part of a title');
+  assert.equal(needsAppReview('letterbookxd', 'reading_record', { title: '가상의 책', state: 'completed' }, refs), false);
+  assert.equal(needsAppReview('letterbookxd', 'reading_record', { title: '가상의 책', state: 'completed' }, undefined), true);
+
+  const db = new TestD1();
+  try {
+    const claude = { db, ownerId: 'demo-owner', now: () => Date.parse('2026-11-02T03:00:00Z'), scopes: ['hub:propose', 'hub:approve'], source: 'claude', appUrls: {} };
+    const r = await callTool('propose_reading_record', { title: '가상의 대하소설', publisher: '가상출판', volume: 2, state: 'reading', current_page: 40 }, claude);
+    assert.equal(r.structuredContent.card.label, '독서 기록');
+    assert.equal(r.structuredContent.card.approve, 'ok');
+    assert.equal(r.structuredContent.card.refs, undefined, 'refs only travel in card_* results');
+    const ticket = r._meta['life-hub/card'].ticket;
+    const id = r.structuredContent.candidate_id;
+    await putDestinationRefs(db, 'demo-owner', 'letterbookxd', 'works', 1, WORKS, '2026-11-02T03:00:00.000Z');
+    await putDestinationRefs(db, 'demo-owner', 'letterbookxd', 'editions', 1, EDITIONS, '2026-11-02T03:00:00.000Z');
+    const refreshed = await callTool('card_refresh', { candidate_id: id, ticket }, claude);
+    assert.deepEqual(refreshed.structuredContent.card.refs, refs);
+    const approved = await callTool('card_approve', { candidate_id: id, ticket, revision: 0 }, claude);
+    assert.equal(approved.structuredContent.card.needs_app_review, false);
+
+    const r2 = await callTool('propose_reading_record', { title: '같은 제목', state: 'completed', rating: 5 }, claude);
+    const t2 = r2._meta['life-hub/card'].ticket;
+    const a2 = await callTool('card_approve', { candidate_id: r2.structuredContent.candidate_id, ticket: t2, revision: 0 }, claude);
+    assert.equal(a2.structuredContent.card.needs_app_review, true, 'two works with that title: the app asks');
+  } finally { db.close(); }
+});
