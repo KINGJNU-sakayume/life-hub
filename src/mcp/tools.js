@@ -378,6 +378,15 @@ async function cardRefs(context, rec) {
   return refs;
 }
 
+/** AniMan titles, as its findSeries: NFKC, lower case, letters and digits; "제목 (원제)" also matches each part. */
+const normTitle = (s) => String(s).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const titleParts = (t) => [t, t.replace(/\s*[([].*?[)\]]\s*/g, ' '), ...[...t.matchAll(/[([](.*?)[)\]]/g)].map((m) => m[1])].map(normTitle).filter(Boolean);
+/** Series a proposed title means exactly (the app saves without asking only when there is one). */
+export function seriesMatches(title, series) {
+  const wanted = normTitle(title);
+  return wanted ? (series ?? []).filter((s) => titleParts(s.label).includes(wanted)) : [];
+}
+
 /** 역 도장깨기 names: '망원역' and '망원' are the same; '신촌(경의중앙)' only matches itself. */
 const bareStation = (name) => String(name).normalize('NFKC').replace(/\s+/g, '').replace(/\(.*\)$/, '').replace(/역$/, '');
 /** Distinct stations a proposed name could mean (like the app's findStations, without the line hint). */
@@ -399,6 +408,7 @@ export function needsAppReview(destination, type, payload, refs) {
     const hits = (refs?.categories ?? []).filter((c) => c.label === payload.category).length;
     return type === 'achievement_definition' && payload.category === undefined ? false : hits !== 1;
   }
+  if (destination === 'animan') return seriesMatches(payload.title, refs?.series).length !== 1;
   if (destination === 'sub' && type === 'station_visit') return stationMatches(payload.station, refs?.stations).length !== 1;
   if (destination === 'kyeokyeoi') {
     const labels = new Set((refs?.regions ?? []).map((r) => r.label));
