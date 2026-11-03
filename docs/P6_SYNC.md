@@ -133,8 +133,8 @@ Progress becomes **v2**, an item map instead of an array, so un-marking can trav
 
 - Per item, Last-Writer-Wins (LWW, 마지막 쓰기 우선) by `at`; equal `at` → `done: true` wins (adding is the lesser harm).
 - `done: false` entries are tombstones, kept **180 days**, then dropped when writing.
-- A device that has not synced for more than 180 days must not auto-merge: it uses the existing manual import
-  preview instead.
+- A device that has not synced for more than 180 days must not auto-merge: it goes through the review in section 7
+  ("Coming back after 180 days") before syncing again.
 - Existing **local** v1 progress (no `exportedAt`) converts once to v2 with every id `done: true` and `at` = the Unix
   epoch (`1970-01-01T00:00:00.000Z`), so any real mark or un-mark from another device wins over it. The v1 value stays
   in storage untouched as the rollback copy.
@@ -222,6 +222,39 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
 - The free-plan daily D1 write allowance was **not verified** for this design. Confirm it on Cloudflare's current
   pricing/limits page before enabling automatic push, and keep the debounce.
 
+### Coming back after 180 days (animan, letterbookxd)
+
+Tombstones are dropped after 180 days, so a device that was away longer may still hold items that another device
+deleted long ago. Merging it as usual would bring them back. Importing the server document into the local copy does
+not help either, because an import only adds. The review therefore also has to **remove** those items.
+
+Definitions:
+
+- `F` (the floor) is the newest server `written_at` this device has seen, the same value the clock rule uses. A
+  stale device has not seen a server time since its last successful sync, so `F` is the time of the server version
+  it last synced with.
+- An item is **unchanged since the last sync** when its time (`at` in animan, `updatedAt` in letterbookxd) is ≤ `F`.
+  Every local edit after that sync was stamped at `F + 1 ms` or later.
+- An item is **missing on the server** when the current server document has neither an entry nor a tombstone for
+  it: in animan, no entry for that series/item; in letterbookxd, no record and no tombstone with that `id` **and**
+  none for its `targetKey`.
+
+Rule. A successful sync leaves every local item on the server, so an item that is unchanged since the last sync but
+missing on the server now was deleted elsewhere and its tombstone has expired. The review:
+
+1. Applies only when the server document exists (`GET` → 200) and `F` is known. With `404`, or with no `F` (the
+   device never synced), the device syncs as on a first write and removes nothing.
+2. Computes the items to remove (unchanged since the last sync **and** missing on the server) and the normal merge
+   result for everything else, and shows both counts in the existing import preview, listing the items to remove.
+3. Offers the manual JSON export of the current local data before applying, and applies only after the owner
+   confirms.
+4. Removes those items locally **without** writing tombstones (nothing on the server refers to them, and a fresh
+   tombstone could hide a newer record on yet another device), merges the rest as usual, and then syncs normally.
+5. Items changed after the last sync (time > `F`) are real offline edits and are never removed by this rule.
+
+If the owner deleted the server document and another device then wrote a fresh one, step 2 lists many items to
+remove. That is why the review shows the list and asks first: the owner can cancel, export, or turn sync off.
+
 ## 8. Changes in this repository (when implemented)
 
 | Where | Change |
@@ -270,7 +303,8 @@ to receive the sync scope.
 
 1. How large is a real elosorter session (tracks × fields)? Decides gzip/R2 in stage 4.
 2. Daily D1 write allowance on the free plan (not verified here).
-3. Is 180 days the right tombstone retention for a device that may sit in a drawer (e.g. an old phone)?
+3. Is 180 days the right tombstone retention for a device that may sit in a drawer (e.g. an old phone)? A device
+   that comes back later goes through the review in section 7, so a longer retention only makes that review rarer.
 4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter).
 5. Client-side encryption (a passphrase the owner types on each device) is out of scope; it would make a lost
    passphrase equal to lost data and would block the Hub's shape checks. Revisit only if the threat model changes.
