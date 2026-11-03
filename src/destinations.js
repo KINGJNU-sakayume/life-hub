@@ -54,7 +54,11 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'letterbookxd', app: '책장', role: 'letterbookxd', path: '/letterbookxd', scope: 'letterbookxd:inbox',
     redirectVar: 'HUB_LETTERBOOKXD_REDIRECT_URI', types: ['reading_record'], adapter: toLetterbookxdCandidate, label: 'letterbookxd',
-    grants: 'Life Hub 수신함의 <strong>독서 기록 후보를 가져오고</strong>, 책장에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+    // Reading card; the app records `approved` books since its stage-6 release.
+    card: { approve: true },
+    // The app's catalogue: works (id, title, author) and editions (id, publisher, "workId/volume").
+    refKinds: ['works', 'editions'],
+    grants: 'Life Hub 수신함의 <strong>독서 기록 후보를 가져오고</strong>, 책 목록(제목·지은이·판본)을 공유하고, 책장에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'sub', app: '역 도장깨기', role: 'sub', path: '/sub', scope: 'sub:inbox',

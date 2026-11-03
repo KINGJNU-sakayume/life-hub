@@ -53,7 +53,7 @@ test('tools/list: card tools are app-only and only for a Claude grant with hub:a
     // 켜켜이 has a card too; destinations without a card keep a plain tool.
     assert.equal(plain.result.tools.find((t) => t.name === 'propose_memory')._meta.ui.resourceUri, 'ui://life-hub/card-kyeokyeoi.html');
     assert.equal(plain.result.tools.find((t) => t.name === 'propose_region_visit')._meta.ui.resourceUri, 'ui://life-hub/card-kyeokyeoi.html');
-    assert.equal(plain.result.tools.find((t) => t.name === 'propose_reading_record')._meta, undefined);
+    assert.equal(plain.result.tools.find((t) => t.name === 'propose_reading_record')._meta.ui.resourceUri, 'ui://life-hub/card-letterbookxd.html');
 
     const full = await rpc(db, 'tools/list', {});
     const cards = full.result.tools.filter((t) => t.name.startsWith('card_'));
@@ -79,7 +79,8 @@ test('resources: every card is a small self-contained mcp-app page with no exter
       ['ui://life-hub/card-diaryroulette.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-achievement.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-sub.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-animan.html', 'text/html;profile=mcp-app'],
-      ['ui://life-hub/card-potcast.html', 'text/html;profile=mcp-app']]);
+      ['ui://life-hub/card-potcast.html', 'text/html;profile=mcp-app'],
+      ['ui://life-hub/card-letterbookxd.html', 'text/html;profile=mcp-app']]);
     for (const { uri } of list.result.resources) {
     const read = await rpc(db, 'resources/read', { uri });
     const [content] = read.result.contents;

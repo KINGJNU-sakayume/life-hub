@@ -398,6 +398,27 @@ export function seriesMatches(title, series) {
   return wanted ? (series ?? []).filter((s) => titleParts(s.label).includes(wanted)) : [];
 }
 
+/**
+ * Whether 책장 can record a proposed book as is, like its findWorks/publishersOf/volumesOf: the title (and the
+ * author when given) means exactly one work, and that work has one publisher (or the named one) and one volume
+ * (or the named one) there.
+ */
+export function bookMatch(payload, refs) {
+  const title = normTitle(payload.title ?? '');
+  const author = payload.author ? normTitle(payload.author) : '';
+  const works = title ? (refs?.works ?? []).filter((w) => {
+    const g = normTitle(w.group ?? '');
+    return normTitle(w.label) === title && (!author || (g && (g.includes(author) || author.includes(g))));
+  }) : [];
+  if (works.length !== 1) return false;
+  const editions = (refs?.editions ?? []).filter((e) => String(e.group).startsWith(works[0].id + '/'));
+  const one = (list, want) => (list.length === 1 ? list : want === undefined ? [] : list.filter((x) => x === want));
+  const publishers = one([...new Set(editions.map((e) => normTitle(e.label)))], payload.publisher ? normTitle(payload.publisher) : undefined);
+  if (publishers.length !== 1) return false;
+  const volumes = editions.filter((e) => normTitle(e.label) === publishers[0]).map((e) => Number(String(e.group).split('/')[1]));
+  return one(volumes, payload.volume).length === 1;
+}
+
 /** 역 도장깨기 names: '망원역' and '망원' are the same; '신촌(경의중앙)' only matches itself. */
 const bareStation = (name) => String(name).normalize('NFKC').replace(/\s+/g, '').replace(/\(.*\)$/, '').replace(/역$/, '');
 /** Distinct stations a proposed name could mean (like the app's findStations, without the line hint). */
@@ -422,6 +443,7 @@ export function needsAppReview(destination, type, payload, refs) {
   // potcast finds the album on Spotify by its ID or a track ID; without either it must ask.
   if (destination === 'potcast') return !payload.spotify_album_id && !(payload.tracks ?? []).some((t) => t.spotify_track_id);
   if (destination === 'animan') return seriesMatches(payload.title, refs?.series).length !== 1;
+  if (destination === 'letterbookxd') return !bookMatch(payload, refs);
   if (destination === 'sub' && type === 'station_visit') return stationMatches(payload.station, refs?.stations).length !== 1;
   if (destination === 'kyeokyeoi') {
     const labels = new Set((refs?.regions ?? []).map((r) => r.label));
