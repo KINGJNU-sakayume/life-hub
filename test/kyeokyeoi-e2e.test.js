@@ -15,7 +15,7 @@ const APPS = {
   achievement: { url: 'https://owner.github.io/achievement/lifehub/', name: '업적 라이브러리', scope: 'achievement:inbox', path: '/achievement' },
   letterbookxd: { url: 'https://owner.github.io/letterbookxd/lifehub/', name: '책장', scope: 'letterbookxd:inbox', path: '/letterbookxd' },
   sub: { url: 'https://owner.github.io/sub/lifehub/', name: '역 도장깨기', scope: 'sub:inbox', path: '/sub' },
-  animan: { url: 'https://owner.github.io/AniMan/lifehub/', name: 'AniMan', scope: 'animan:inbox', path: '/animan' },
+  animan: { url: 'https://owner.github.io/animan/lifehub/', name: 'AniMan', scope: 'animan:inbox', path: '/animan' },
 };
 const clientId = (app) => app.url.replace(/lifehub\/$/, '') + 'lifehub-client.json';
 const realFetch = globalThis.fetch;
@@ -213,7 +213,7 @@ test('역 도장깨기 connects as its own client and receives station_visit can
   } finally { env.DB.close(); }
 });
 
-test('AniMan connects (callback path with capitals) and receives media_progress candidates only', async () => {
+test('AniMan connects and receives media_progress candidates only', async () => {
   const env = makeEnv();
   try {
     await seed(env);

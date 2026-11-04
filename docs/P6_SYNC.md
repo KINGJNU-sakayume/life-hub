@@ -1,13 +1,25 @@
-# P6 — Device sync over Life Hub (design; Hub side deployed, apps not yet)
+# P6 — Device sync over Life Hub (design; Hub side and apps implemented)
 
-> **Status: stage 1 (Hub side) deployed on 2026-11-03 (PR #34; migration `0009_sync.sql` applied to the remote D1).
-> No app syncs through it yet.** The migration, `/sync` API, registry support and tests live in this repository
-> (`migrations/0009_sync.sql`, `src/sync/`, `test/sync.test.js`). Do not claim any app syncs through it until its own
-> stage lands: stages 2–5 (animan, letterbookxd, elosorter, retiring Supabase) each need a separate explicit task per
-> repository. Two decisions made while implementing: the sync scope of an app that also has an inbox is **opt-in** (a
+> **Status: stage 1 (Hub side) deployed on 2026-11-03 (PR #34; migration `0009_sync.sql` applied to the remote D1).**
+> The migration, `/sync` API, registry support and tests live in this repository (`migrations/0009_sync.sql`,
+> `src/sync/`, `test/sync.test.js`). App stages, as read from each app repository's default branch on 2026-11-04
+> (merge dates; whether and when each app was deployed is not recorded here):
+>
+> - Stage 2, **animan**: sync client merged 2026-11-03 (animan PR #5).
+> - Stage 3, **letterbookxd**: sync merged 2026-11-04 (letterbookxd PR #16).
+> - Stage 4, **elosorter**: Life Hub sync merged 2026-11-04 (elosorter PR #26).
+> - Stage 5, **retiring Supabase** for elosorter: the Supabase cloud backup code was removed from elosorter on
+>   2026-11-04 (elosorter PR #27). Removing the `anon read/write` policy on the Supabase side is not visible in a
+>   repository: 앱 저장소에 구현됨, 날짜 미기록.
+>
+> Two decisions made while implementing: the sync scope of an app that also has an inbox is **opt-in** (a
 > checkbox on the consent page, so reconnecting never silently widens a grant; resolves open question 4), and the
 > version is carried in the response body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차
 > 출처 리소스 공유) would need `Access-Control-Expose-Headers`).
+>
+> 2026-11-04 변경: 동기화 권한을 기본 포함으로 바꿈. 이유: 소유자가 연결 한 번으로 제안과 동기화를 함께 쓰기로 함.
+> 다시 연결할 때 권한이 넓어지는 점은 동의 화면에 두 권한을 함께 적어 보여 주는 것으로 대신함. 이미 인박스 권한만
+> 받은 연결은 앱이 다시 연결을 안내함.
 
 ## 1. Goal
 
@@ -213,7 +225,7 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
 - Before retrying a `PUT` whose response never arrived, read `/sync/meta` and compare its `sha256` with the hash of
   the exact UTF-8 bytes sent (keep the sent string; re-serialising may change the hash).
 - A sync route answers `403` with `WWW-Authenticate: … error="insufficient_scope"` when the token has the inbox
-  scope only (the owner did not tick the sync checkbox). Clients must show "sync not allowed, reconnect" and **keep
+  scope only (the grant predates 2026-11-04 (sync was opt-in then)). Clients must show "sync not allowed, reconnect" and **keep
   the token**: the inbox still works with it. Other `403`s (role or owner mismatch) mean the grant is unusable.
 - `X-Device-Label` must be 1–40 printable ASCII characters after trimming; an empty label is a `400`, so omit the
   header instead.
@@ -236,7 +248,7 @@ changing Life Hub. Values below were read from this repository and from `@cloudf
 | --- | --- |
 | Issuer / origin | the deployed `HUB_PUBLIC_ORIGIN` (today `https://life-hub-api.213303.workers.dev`) |
 | Authorize | `GET <origin>/authorize` with `response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge`, `code_challenge_method=S256`, `resource=<origin>/<app>` |
-| Scope to request | apps with an inbox: `<app>:inbox <app>:sync`; sync-only apps (elosorter): `<app>:sync`. What is **granted** is decided on the consent page (the sync checkbox), so read it from the token response |
+| Scope to request | apps with an inbox: `<app>:inbox <app>:sync`; sync-only apps (elosorter): `<app>:sync`. What is **granted** is decided by the app's profile, not the request: since 2026-11-04 both scopes for an app with an inbox (no checkbox). Still read it from the token response, since an older grant may hold the inbox scope only |
 | Token | `POST <origin>/oauth/token`, `application/x-www-form-urlencoded`, public client (no secret): `grant_type=authorization_code` with `code`, `redirect_uri`, `code_verifier`, `client_id`, `resource`; or `grant_type=refresh_token` with `refresh_token`, `client_id` |
 | Token response | `{ access_token, token_type: "bearer", expires_in, refresh_token, scope }`; `scope` is space-separated and is present on both grants |
 | Access token lifetime | 3,600 s (library default; Life Hub sets no override). Use `expires_in`; refresh about 60 s early |
@@ -356,7 +368,7 @@ to receive the sync scope.
 2. ~~Daily D1 write allowance on the free plan.~~ Checked 2026-11-04: 100,000 rows written per day (section 7).
 3. Is 180 days the right tombstone retention for a device that may sit in a drawer (e.g. an old phone)? A device
    that comes back later goes through the review in section 7, so a longer retention only makes that review rarer.
-4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter).
+4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter). Changed 2026-11-04: required (granted by default) for apps that also have an inbox too; see the status note at the top.
 5. Client-side encryption (a passphrase the owner types on each device) is out of scope; it would make a lost
    passphrase equal to lost data and would block the Hub's shape checks. Revisit only if the threat model changes.
 6. ~~Grant lifetime.~~ Decided 2026-11-04: no practical expiry (see "Exact values"). Ending access stays possible

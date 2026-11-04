@@ -32,4 +32,4 @@ exists there; otherwise it waits on the landing page. Setting 「Claude에서 �
 
 ## Setup
 
-Repository variable `HUB_ANIMAN_REDIRECT_URI` = `https://<user>.github.io/AniMan/lifehub/`; deploy. No migration, no reconnect.
+Repository variable `HUB_ANIMAN_REDIRECT_URI` = `https://<user>.github.io/animan/lifehub/`; deploy. No migration, no reconnect.

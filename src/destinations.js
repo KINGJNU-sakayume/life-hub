@@ -11,10 +11,10 @@
  *
  * Optional `sync` (docs/P6_SYNC.md): the app may keep one JSON document on this Hub, served at
  * `<path>/v1/sync`. `scope` is its own OAuth scope; `maxBytes` (default 1 MiB) and `keep` (default 10 versions)
- * override the limits in src/sync/api.js. An app with an inbox (`scope`) gets the sync scope as an opt-in
- * checkbox on the consent page; a SYNC-ONLY app (no `scope`, `types` or `adapter`, e.g. elosorter) has no
- * inbox, candidates or card, and its sync scope is required. Sync-only ids must never be added to the
- * candidate destinations in src/core/candidates.js.
+ * override the limits in src/sync/api.js. An app with an inbox (`scope`) gets the sync scope as a second
+ * required scope (since 2026-11-04; it was an opt-in checkbox before); a SYNC-ONLY app (no `scope`, `types`
+ * or `adapter`, e.g. elosorter) has no inbox, candidates or card, and its sync scope is required. Sync-only
+ * ids must never be added to the candidate destinations in src/core/candidates.js.
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
