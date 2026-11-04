@@ -110,7 +110,7 @@ function consentPage(details, profile, handle, returnTo, headers) {
   const body = `<h1>${name}에 Life Hub 연결</h1>
 ${origin}
 <p>허용하면 이 앱이 ${profile.grants}</p>
-<p class="muted">권한: <code>${profile.scopes.map(escapeHtml).join(', ')}</code><br>
+${profile.note ? `<p>${escapeHtml(profile.note)}</p>\n` : ''}<p class="muted">권한: <code>${profile.scopes.map(escapeHtml).join(', ')}</code><br>
 인증 결과가 전달되는 곳: <strong>${escapeHtml(details.redirectHost)}</strong></p>
 ${details.redirectIsLoopback ? '<p class="warn">이 컴퓨터의 앱으로 권한이 전달돼요. 방금 직접 연결을 시작한 경우에만 계속하세요.</p>' : ''}
 <form method="post" action="/authorize">

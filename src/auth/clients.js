@@ -53,22 +53,21 @@ export const ALL_SCOPES = Object.freeze([
   ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
 ]);
 
+/** Shown under the grant text on the consent page of an app that syncs (P6_SYNC.md section 7). */
+const SYNC_NOTE = '이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요. 내용은 공개 저장소에 올라가지 않아요.';
+
 /**
- * The OAuth profile of one destination app. An app with an inbox always gets its inbox scope and may get its
- * sync scope as an opt-in checkbox on the consent page (the owner ticks it with the password, like hub:approve);
- * a sync-only app (no inbox) gets the sync scope as its one required scope.
+ * The OAuth profile of one destination app. An app with an inbox and sync gets both scopes as required scopes
+ * (since 2026-11-04; sync was an opt-in checkbox before, and those grants are left as they are); an app with an
+ * inbox only gets its inbox scope; a sync-only app (no inbox) gets the sync scope as its one required scope.
  */
 function destinationProfile(d, redirectUri) {
   const profile = {
     id: d.role, role: d.role, redirectUri, resourcePath: d.path,
-    scopes: d.scope ? [d.scope] : [d.sync.scope],
+    scopes: [d.scope, d.sync?.scope].filter(Boolean),
     allowMissingResource: false, title: d.app, grants: d.grants,
   };
-  if (d.scope && d.sync) profile.optionalScopes = [{
-    scope: d.sync.scope,
-    label: `${d.app} 데이터를 기기끼리 동기화하는 것도 허용`,
-    detail: '이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요. 내용은 공개 저장소에 올라가지 않아요.',
-  }];
+  if (d.scope && d.sync) profile.note = SYNC_NOTE;
   return profile;
 }
 

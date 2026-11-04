@@ -74,13 +74,13 @@ export const FIELDS = Object.freeze([
     env: 'HUB_ANIMAN_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ANIMAN_REDIRECT_URI', optional: true,
     valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
-    hint: 'empty, or AniMan\'s Life Hub callback URL such as https://<user>.github.io/AniMan/lifehub/ (no query or fragment)',
+    hint: 'empty, or AniMan\'s Life Hub callback URL such as https://<user>.github.io/animan/lifehub/ (no query or fragment)',
   },
   {
     env: 'HUB_DIARYROULETTE_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_DIARYROULETTE_REDIRECT_URI', optional: true,
     valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
-    hint: 'empty, or 일기 룰렛 (Diaryroulette)\'s Life Hub callback URL such as https://<user>.github.io/Diaryroulette/ (no query or fragment)',
+    hint: 'empty, or 일기 룰렛 (Diaryroulette)\'s Life Hub callback URL such as https://<user>.github.io/diaryroulette/ (no query or fragment)',
   },
   {
     env: 'HUB_ELOSORTER_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ELOSORTER_REDIRECT_URI', optional: true,

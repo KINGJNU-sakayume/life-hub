@@ -15,7 +15,7 @@ import { toDestinationCandidate } from '../src/adapters/index.js';
 // CIMD is only enabled with this compatibility flag; the Workers runtime exposes it on `Cloudflare`.
 globalThis.Cloudflare = { compatibilityFlags: { global_fetch_strictly_public: true } };
 const APPS = {
-  animan: { page: 'https://owner.github.io/AniMan/lifehub/', name: 'AniMan' },
+  animan: { page: 'https://owner.github.io/animan/lifehub/', name: 'AniMan' },
   elosorter: { page: 'https://owner.github.io/elosorter/lifehub/', name: 'ELO Sorter' },
 };
 const clientIdOf = (app) => APPS[app].page.replace(/lifehub\/$/, 'lifehub-client.json');
@@ -358,13 +358,27 @@ const api = (env, token, method, path, { headers = {}, body } = {}) => call(env,
 });
 const scopesOf = (token) => token.scope.split(' ').sort();
 
-test('an app with an inbox gets sync only when the owner ticks it on the consent page', async () => {
+test('an app with an inbox gets inbox and sync together, with no checkbox and no forged extras', async () => {
   const env = makeEnv();
   try {
-    const without = await connect(env, 'animan', { scope: 'animan:inbox' });
-    assert.match(without.html, /type="checkbox" name="optional_scope" value="animan:sync"/);
-    assert.deepEqual(scopesOf(without.token), ['animan:inbox']);
-    const t = without.token.access_token;
+    const plain = await connect(env, 'animan', { scope: 'animan:inbox' });
+    assert.doesNotMatch(plain.html, /name="optional_scope" value="animan:sync"/);
+    assert.doesNotMatch(plain.html, /name="optional_scope"/);
+    assert.match(plain.html, /animan:inbox, animan:sync/, 'both scopes are listed on the consent page');
+    assert.match(plain.html, /<p>이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요\. 내용은 공개 저장소에 올라가지 않아요\.<\/p>/);
+    assert.deepEqual(scopesOf(plain.token), ['animan:inbox', 'animan:sync'], 'the profile, not the request, decides the grant');
+    assert.equal((await api(env, plain.token.access_token, 'GET', '/animan/v1/candidates')).status, 200, 'the inbox works');
+
+    // A grant from before 2026-11-04 holds the inbox scope only; an inbox-only access token (downscoped on refresh)
+    // stands in for it: the inbox keeps working, sync answers 403 insufficient_scope so the app asks to reconnect.
+    const narrowed = await call(env, '/oauth/token', { method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: PAGES_ORIGIN },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: plain.token.refresh_token,
+        client_id: clientIdOf('animan'), scope: 'animan:inbox', resource: ORIGIN + '/animan' }) });
+    const legacy = await narrowed.json();
+    assert.equal(narrowed.status, 200, JSON.stringify(legacy));
+    assert.deepEqual(scopesOf(legacy), ['animan:inbox']);
+    const t = legacy.access_token;
     assert.equal((await api(env, t, 'GET', '/animan/v1/candidates')).status, 200, 'the inbox keeps working');
     const refused = await api(env, t, 'PUT', '/animan/v1/sync', { headers: { 'If-None-Match': '*' }, body: animanDoc() });
     assert.equal(refused.status, 403);
@@ -372,8 +386,11 @@ test('an app with an inbox gets sync only when the owner ticks it on the consent
     assert.equal((await api(env, t, 'GET', '/animan/v1/sync')).status, 403);
     assert.equal((await api(env, t, 'GET', '/animan/v1/sync/versions')).status, 403);
 
-    const withSync = await connect(env, 'animan', { scope: 'animan:inbox', ticked: ['animan:sync', 'hub:approve'] });
-    assert.deepEqual(scopesOf(withSync.token), ['animan:inbox', 'animan:sync'], 'only the optional scopes this app offers are granted');
+    const forged = await connect(env, 'animan', { scope: 'animan:inbox animan:sync',
+      ticked: ['letterbookxd:sync', 'elosorter:sync', 'letterbookxd:inbox', 'hub:approve'] });
+    assert.deepEqual(scopesOf(forged.token), ['animan:inbox', 'animan:sync'], "another app's scope in the form is never granted");
+
+    const withSync = forged;
     const s = withSync.token.access_token;
     const preflight = await call(env, '/animan/v1/sync', { method: 'OPTIONS', headers: { Origin: PAGES_ORIGIN,
       'Access-Control-Request-Method': 'PUT', 'Access-Control-Request-Headers': 'authorization, content-type, if-match, if-none-match, x-device-label' } });
@@ -410,7 +427,7 @@ test('a sync-only app (ELO Sorter) has the sync scope as its one required scope 
 test('a token reaches only its own app, and rotating the owner id invalidates it', async () => {
   const env = makeEnv();
   try {
-    const { token } = await connect(env, 'animan', { scope: 'animan:inbox', ticked: ['animan:sync'] });
+    const { token } = await connect(env, 'animan', { scope: 'animan:inbox animan:sync' });
     const t = token.access_token;
     assert.equal((await api(env, t, 'PUT', '/animan/v1/sync', { headers: { 'If-None-Match': '*' }, body: animanDoc() })).status, 200);
     const foreign = await api(env, t, 'GET', '/letterbookxd/v1/sync');
