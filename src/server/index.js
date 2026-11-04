@@ -111,6 +111,9 @@ export function createServers(origin) {
     // HUB_OWNER_ID still end access. Access tokens keep the library default (3,600 s).
     refreshTokenTTL: undefined,
     refreshTokenIdleTTL: 315360000, // 10 years, in seconds
+    // DCR registrations never expire either (same section, "Client registration"); omitting the key keeps the
+    // library's 90-day default. Records written under that default keep their stored KV expiry.
+    clientRegistrationTTL: undefined,
     // DCR accepts one approved callback per client. Never permit mixed MCP client callbacks.
     // Destination apps use their own CIMD documents, not DCR.
     clientRegistrationCallback: ({ clientMetadata }) => {

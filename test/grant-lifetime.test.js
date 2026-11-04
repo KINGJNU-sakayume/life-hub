@@ -1,7 +1,7 @@
 /**
- * Grant lifetime (docs/P6_SYNC.md section 7, "Grant lifetime"): no practical expiry. New grants carry no absolute
- * expiry, every refresh restarts a 10-year idle lifetime (which also lifts grants issued under the old 30-day
- * default), and revocation and owner rotation still end access. Runs the real @cloudflare/workers-oauth-provider
+ * Grant lifetime and client registration (docs/P6_SYNC.md section 7): no practical expiry. New grants carry no
+ * absolute expiry, every refresh restarts a 10-year idle lifetime (which also lifts grants issued under the old
+ * 30-day default), new DCR registrations never expire, and revocation and owner rotation still end access. Runs the real @cloudflare/workers-oauth-provider
  * with a mocked clock. Synthetic data only.
  */
 import test from 'node:test';
@@ -20,15 +20,17 @@ const OLD_DEFAULT_TTL = 30 * DAY; // the library default this change overrides
 function makeEnv() {
   const kv = new TestKV();
   const grantPuts = [];
+  const clientPuts = [];
   const put = kv.put.bind(kv);
   kv.put = async (key, value, options = {}) => {
     if (key.startsWith('grant:')) grantPuts.push({ key, options });
+    if (key.startsWith('client:')) clientPuts.push({ key, options });
     return put(key, value, options);
   };
   return {
     env: { DB: new TestD1(), OAUTH_KV: kv, HUB_PUBLIC_ORIGIN: ORIGIN, HUB_OWNER_ID: 'demo-owner',
       HUB_OWNER_PASSWORD: PASSWORD, HUB_OWNER_TOKEN: 'owner_' + 'G'.repeat(48) },
-    grantPuts,
+    grantPuts, clientPuts,
   };
 }
 const ctx = () => ({ waitUntil() {}, passThroughOnException() {}, props: {} });
@@ -220,5 +222,54 @@ test('revoking the refresh token on the token endpoint ends the grant despite th
     }
     assert.equal((await tools(env, refreshed.body.access_token)).status, 401);
     assert.equal((await env.OAUTH_KV.list({ prefix: 'grant:' })).keys.length, 0);
+  } finally { env.DB.close(); }
+});
+
+test('a new DCR registration never expires, so a grant refreshed a year later still works', async (t) => {
+  startClock(t);
+  const { env, clientPuts } = makeEnv();
+  try {
+    const { clientId, tokens } = await connect(env);
+    const registration = clientPuts.find((p) => p.key === 'client:' + clientId);
+    assert.ok(registration);
+    assert.equal(registration.options.expiration, undefined);
+    assert.equal(registration.options.expirationTtl, undefined);
+    assert.equal((await env.OAUTH_KV.get('client:' + clientId, { type: 'json' })).registrationExpiresAt, undefined);
+
+    advance(t, 400 * DAY); // well past the old 90-day registration default
+    assert.ok(await env.OAUTH_KV.get('client:' + clientId), 'registration still stored');
+    const refreshed = await refresh(env, clientId, tokens.refresh_token);
+    assert.equal(refreshed.status, 200, JSON.stringify(refreshed.body));
+    assert.equal(refreshed.body.expires_in, 3600);
+  } finally { env.DB.close(); }
+});
+
+test('a DCR registration made under the old 90-day default keeps its expiry; that client reconnects once', async (t) => {
+  startClock(t);
+  const { env, clientPuts } = makeEnv();
+  try {
+    const { clientId, tokens } = await connect(env);
+    // Reproduce a record written under the library default: stamped, and expiring in KV 90 days after registration.
+    const key = 'client:' + clientId;
+    const legacy = { ...(await env.OAUTH_KV.get(key, { type: 'json' })), registrationExpiresAt: nowSeconds() + 90 * DAY };
+    await env.OAUTH_KV.put(key, JSON.stringify(legacy), { expirationTtl: 90 * DAY });
+    const writes = clientPuts.length;
+
+    // Past half its lifetime: the refresh works, but the library no longer renews the registration.
+    advance(t, 50 * DAY);
+    const refreshed = await refresh(env, clientId, tokens.refresh_token);
+    assert.equal(refreshed.status, 200, JSON.stringify(refreshed.body));
+    assert.equal(clientPuts.length, writes, 'registration not rewritten');
+
+    advance(t, 41 * DAY);
+    const lapsed = await refresh(env, clientId, refreshed.body.refresh_token);
+    assert.notEqual(lapsed.status, 200);
+    assert.equal(lapsed.body.error, 'invalid_client', JSON.stringify(lapsed.body));
+
+    // A fresh connection registers without expiry.
+    const again = await connect(env);
+    const fresh = clientPuts.find((p) => p.key === 'client:' + again.clientId);
+    assert.equal(fresh.options.expirationTtl, undefined);
+    assert.equal(fresh.options.expiration, undefined);
   } finally { env.DB.close(); }
 });
