@@ -105,6 +105,15 @@ export function createServers(origin) {
     // CIMD (Claude may use it; the destination apps do) needs the global_fetch_strictly_public flag. DCR is the fallback.
     clientIdMetadataDocumentEnabled: true,
     scopesSupported: [...ALL_SCOPES],
+    // Grant lifetime: no practical expiry (docs/P6_SYNC.md section 7, "Grant lifetime"). The key must be present:
+    // omitting it keeps the library's 30-day absolute default. The idle lifetime restarts at every refresh, which
+    // also lifts grants issued under the old 30-day default on their next refresh. Revoking a grant and rotating
+    // HUB_OWNER_ID still end access. Access tokens keep the library default (3,600 s).
+    refreshTokenTTL: undefined,
+    refreshTokenIdleTTL: 315360000, // 10 years, in seconds
+    // DCR registrations never expire either (same section, "Client registration"); omitting the key keeps the
+    // library's 90-day default. Records written under that default keep their stored KV expiry.
+    clientRegistrationTTL: undefined,
     // DCR accepts one approved callback per client. Never permit mixed MCP client callbacks.
     // Destination apps use their own CIMD documents, not DCR.
     clientRegistrationCallback: ({ clientMetadata }) => {
