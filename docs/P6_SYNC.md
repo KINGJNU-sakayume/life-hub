@@ -67,7 +67,7 @@ One resource per destination, under the destination's existing path, e.g. `/anim
 | --- | --- | --- | --- |
 | `GET /<app>/v1/sync` | Newest document: `{ version, sha256, size_bytes, written_at, device, doc }` | 200 | 404 none yet |
 | `GET /<app>/v1/sync/meta` | Same without `doc` (cheap check before downloading) | 200 | 404 |
-| `PUT /<app>/v1/sync` | Body = the document. `If-Match: "<version>"` to replace, or `If-None-Match: *` for the first write. Optional `X-Device-Label` (≤ 40 chars, display only, never authentication). | 200 `{ version, sha256, written_at }` | 400 invalid document, 412 stale (body has current meta), 413 too large, 415, 428 no precondition header |
+| `PUT /<app>/v1/sync` | Body = the document. `If-Match: "<version>"` to replace, or `If-None-Match: *` for the first write. Optional `X-Device-Label` (≤ 40 chars, display only, never authentication). | 200 `{ version, sha256, size_bytes, written_at, device }` | 400 invalid document, 412 stale (body has current meta), 413 too large, 415, 428 no precondition header |
 | `GET /<app>/v1/sync/versions` | Meta of the kept versions, newest first | 200 | — |
 | `GET /<app>/v1/sync/versions/<n>` | One kept version, like `GET /sync` | 200 | 404 |
 | `DELETE /<app>/v1/sync` | Remove every version of this destination (owner decision; needs `If-Match`) | 204 | 412 |
@@ -195,8 +195,8 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
 - Optional later improvement: union the append-only `matches` list automatically when both sides only added.
 - `ownerId` (Spotify user id) stays as the existing "blocked: another account's session" sanity check.
 - **Size first.** The document must stay JSON with `version: 2` and a `tracks` array (the Hub's shape check), so it is
-  not compressed. The sync document leaves out fields the app recomputes on load (per its own comments: `rating`,
-  `sigma` and other derived values) and nothing else. The app shows the document's UTF-8 size; over **900 KiB**
+  not compressed. The sync document leaves out fields the app recomputes on load `rating` and `sigma` on each track (the only
+  derived fields in its session format) and nothing else. The app shows the document's UTF-8 size; over **900 KiB**
   (headroom under the 1 MiB cap and the Worker's per-request CPU time) it does not sync automatically and tells the
   owner. Whether to add gzip or R2 is an owner decision after measuring a real session (open question 1).
 - Supabase: while Life Hub sync is on and has succeeded once, the app stops writing `elo_state`. Reading it stays
@@ -219,8 +219,56 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
   header instead.
 - `400`, `415` and `428` are client bugs: stop and report, do not loop. `413`: tell the owner and stop automatic push.
 - Keep the manual JSON export/import. It is the disaster-recovery path and works with no Life Hub at all.
-- The free-plan daily D1 write allowance was **not verified** for this design. Confirm it on Cloudflare's current
-  pricing/limits page before enabling automatic push, and keep the debounce.
+- Keep the debounce. The free-plan limits were checked on 2026-11-04 (section 7, "Exact values") and leave a wide
+  margin, but they are daily and shared by every app.
+
+### Exact values every client uses
+
+This list is the whole client contract. A behaviour that is neither here nor elsewhere in this document is **not
+defined**: the client picks the most conservative option (never deletes or overwrites local data, never retries a
+write in a loop, never sends more than it must) and lists it under "Not in the contract" in its pull request, without
+changing Life Hub. Values below were read from this repository and from `@cloudflare/workers-oauth-provider` 1.2.4
+(the version pinned in `package.json`); if that version changes, re-check them.
+
+**OAuth (Open Authorization, 개방형 인증)**
+
+| Item | Value |
+| --- | --- |
+| Issuer / origin | the deployed `HUB_PUBLIC_ORIGIN` (today `https://life-hub-api.213303.workers.dev`) |
+| Authorize | `GET <origin>/authorize` with `response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge`, `code_challenge_method=S256`, `resource=<origin>/<app>` |
+| Scope to request | apps with an inbox: `<app>:inbox <app>:sync`; sync-only apps (elosorter): `<app>:sync`. What is **granted** is decided on the consent page (the sync checkbox), so read it from the token response |
+| Token | `POST <origin>/oauth/token`, `application/x-www-form-urlencoded`, public client (no secret): `grant_type=authorization_code` with `code`, `redirect_uri`, `code_verifier`, `client_id`, `resource`; or `grant_type=refresh_token` with `refresh_token`, `client_id` |
+| Token response | `{ access_token, token_type: "bearer", expires_in, refresh_token, scope }`; `scope` is space-separated and is present on both grants |
+| Access token lifetime | 3,600 s (library default; Life Hub sets no override). Use `expires_in`; refresh about 60 s early |
+| Refresh token | Each refresh returns a **new** refresh token: store it. The previous one stays valid until the next refresh (one-step grace for a lost response) |
+| Grant lifetime | **No practical expiry** (owner decision 2026-11-04): no absolute lifetime (`refreshTokenTTL: undefined`) and a 10-year idle lifetime that restarts on every refresh (`refreshTokenIdleTTL`), set in `src/server/index.js`. Until that change is deployed the library default applies (30 days from consent). Either way, a token endpoint `400 invalid_grant` means: drop the tokens, show "reconnect", keep sync settings and local data |
+| Revoke (disconnect) | `POST <origin>/oauth/token` with `token=<refresh token>`, `token_type_hint=refresh_token`, `client_id` (RFC 7009 form on the token endpoint; it has no `grant_type`). Revoking the refresh token revokes the whole grant. Always `200` with an empty body, also for an unknown token, so the client just drops its local tokens; failure to reach Life Hub is not an error |
+| Client metadata document (CIMD, Client ID Metadata Document) | served at the `client_id` URL itself over public HTTPS (GitHub Pages is fine): `{ client_id: <that URL>, client_name, client_uri, redirect_uris: [<callback>], grant_types: ["authorization_code","refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }` |
+| Callback | must equal the Life Hub variable `HUB_<APP>_REDIRECT_URI` **exactly** (scheme, host, path, trailing slash). Life Hub picks the consent profile by this value; a mismatch shows "not allowed" |
+
+**Sync API (section 5)**
+
+| Item | Value |
+| --- | --- |
+| Error body | `{ "error": "<fixed English text>" }`; `412` adds `"current": <meta or null>`. Clients branch on the status code only, never on the text, and never show the body |
+| `403` | with `WWW-Authenticate: … error="insufficient_scope"` → no sync scope, keep the token. Any other `403` → grant unusable, drop the token |
+| CORS (Cross-Origin Resource Sharing, 교차 출처 리소스 공유) | handled by the OAuth library: any origin, methods `*`, headers `Authorization, *`, `WWW-Authenticate` and `Retry-After` exposed. Nothing to configure in apps |
+| Daily Cloudflare limit reached | D1 or Workers daily limits make requests fail with `500` (D1) or a Cloudflare `1027` error page (Workers; a browser usually sees it as a network error). Treat as "retry later" with backoff; limits reset at 00:00 UTC |
+| `429` | only the consent page sends it (too many password attempts, `Retry-After` in seconds). The sync API does not; if one arrives anyway, treat it like `5xx` |
+| Lost `PUT` response | apps that merge (animan, letterbookxd) need not persist it: the next pass merges and finds nothing to send. Apps that do not merge (elosorter) persist the sent body's `sha256` and check `/sync/meta` before sending again, even after a restart |
+| Version history | Life Hub keeps the last 10 versions (`/sync/versions`). Apps are **not** required to show them; a restore UI is out of scope for stages 2–4 |
+| Account check | Life Hub has one owner and does not know app-level accounts (e.g. Spotify). Cross-account protection is the app's own check (elosorter `ownerId`) |
+
+**Cloudflare free plan (checked 2026-11-04 on Cloudflare's pricing/limits pages)**
+
+| Resource | Free limit | Use by sync |
+| --- | --- | --- |
+| D1 rows written | 100,000 / day | ≈ 4 per `PUT` (insert + prune, each with its index row) |
+| D1 rows read | 5,000,000 / day | 1–10 per request |
+| D1 storage | 5 GB | ≤ 10 versions × 3 apps × 1 MiB |
+| Workers requests | 100,000 / day | 1–3 per sync pass |
+| Workers CPU time | 10 ms / request | the risk for large documents: parse + SHA-256 of ~1 MiB; hence elosorter's 900 KiB cap |
+| KV writes | 1,000 / day (different keys) | token refreshes only (about one per app per device per active hour) |
 
 ### Coming back after 180 days (animan, letterbookxd)
 
@@ -301,10 +349,14 @@ to receive the sync scope.
 
 ## 11. Open questions
 
-1. How large is a real elosorter session (tracks × fields)? Decides gzip/R2 in stage 4.
-2. Daily D1 write allowance on the free plan (not verified here).
+1. How large is a real elosorter session (tracks × fields)? Decides gzip/R2 in stage 4. Synthetic measurement
+   (elosorter PR #26): about 357 bytes per track and 55 bytes per comparison, so 900 KiB holds roughly 2,000 tracks
+   with 4,000 comparisons. Owner to read the real size in elosorter's settings.
+2. ~~Daily D1 write allowance on the free plan.~~ Checked 2026-11-04: 100,000 rows written per day (section 7).
 3. Is 180 days the right tombstone retention for a device that may sit in a drawer (e.g. an old phone)? A device
    that comes back later goes through the review in section 7, so a longer retention only makes that review rarer.
 4. ~~When is the sync scope requested?~~ Decided in stage 1: opt-in checkbox on the consent page for apps that also have an inbox; required for sync-only apps (elosorter).
 5. Client-side encryption (a passphrase the owner types on each device) is out of scope; it would make a lost
    passphrase equal to lost data and would block the Hub's shape checks. Revisit only if the threat model changes.
+6. ~~Grant lifetime.~~ Decided 2026-11-04: no practical expiry (see "Exact values"). Ending access stays possible
+   at any time: 「연결 해제」 in an app revokes its grant, and rotating `HUB_OWNER_ID` invalidates every token.
