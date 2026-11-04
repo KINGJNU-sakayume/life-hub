@@ -1,13 +1,15 @@
-# P6 — Device sync over Life Hub (design; Hub side deployed, apps not yet)
+# P6 — Device sync over Life Hub (design; Hub side deployed, apps 2–4 merged, stage 5 in review)
 
-> **Status: stage 1 (Hub side) deployed on 2026-11-03 (PR #34; migration `0009_sync.sql` applied to the remote D1).
-> No app syncs through it yet.** The migration, `/sync` API, registry support and tests live in this repository
-> (`migrations/0009_sync.sql`, `src/sync/`, `test/sync.test.js`). Do not claim any app syncs through it until its own
-> stage lands: stages 2–5 (animan, letterbookxd, elosorter, retiring Supabase) each need a separate explicit task per
-> repository. Two decisions made while implementing: the sync scope of an app that also has an inbox is **opt-in** (a
-> checkbox on the consent page, so reconnecting never silently widens a grant; resolves open question 4), and the
-> version is carried in the response body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차
-> 출처 리소스 공유) would need `Access-Control-Expose-Headers`).
+> **Status (2026-11-04).** Stage 1 (Hub side) is deployed (PR #34; migration `0009_sync.sql` applied to the remote D1).
+> In the app repositories, stage 2 (animan), stage 3 (letterbookxd) and stage 4 (elosorter, PR #26) are merged to
+> `main`; stage 5's code part (elosorter PR #27, removes the Supabase code) is open. This repository does not see the
+> apps' deployments: whether a given device syncs depends on that app being deployed and connected (and, for
+> elosorter, on `HUB_ELOSORTER_REDIRECT_URI` being set here). The Supabase side of stage 5 (backup, remove the
+> `anon` policy, delete the keys) is the owner's manual step in the Supabase dashboard and is not done by any code.
+> Two decisions made while implementing: the sync scope of an app that also has an inbox is **opt-in** (a checkbox
+> on the consent page, so reconnecting never silently widens a grant; resolves open question 4), and the version is
+> carried in the response body rather than an `ETag` header (CORS (Cross-Origin Resource Sharing, 교차 출처 리소스
+> 공유) would need `Access-Control-Expose-Headers`).
 
 ## 1. Goal
 
@@ -199,8 +201,9 @@ model, with the server `version` in place of the old `savedAt`/`syncedAt` pair:
   derived fields in its session format) and nothing else. The app shows the document's UTF-8 size; over **900 KiB**
   (headroom under the 1 MiB cap and the Worker's per-request CPU time) it does not sync automatically and tells the
   owner. Whether to add gzip or R2 is an owner decision after measuring a real session (open question 1).
-- Supabase: while Life Hub sync is on and has succeeded once, the app stops writing `elo_state`. Reading it stays
-  available for the one-time copy of stage 5. The manual JSON file backup stays.
+- Supabase: stage 4 stopped writing `elo_state` once Life Hub sync had succeeded. Stage 5 (elosorter PR #27) removes
+  the Supabase read and write code altogether, so after it nothing in the app can copy from Supabase: move a session
+  to Life Hub from another device that already syncs, or from the manual JSON file (which stays).
 
 ## 7. Client behaviour (all apps)
 
@@ -346,7 +349,7 @@ to receive the sync scope.
 | 2 | **animan** (pilot): v2 progress format, tombstones, sync client, reconnect | Two browsers converge, including an un-mark |
 | 3 | **letterbookxd**: logs + tombstones, `same-target` rule | Offline edit on two devices merges without losing either |
 | 4 | **elosorter**: measure the real session size first (section 6). Over the limit → owner decides between gzip (needs a Hub shape-check change) and R2 (not bound today; R2's free tier is 10 GB-month) | Supabase `elo_state` no longer written |
-| 5 | Retire Supabase for elosorter: one-time copy of the cloud session into Life Hub, then remove the `anon read/write` policy | The anon key can no longer read or write the table |
+| 5 | Retire Supabase for elosorter: remove the app's Supabase code (PR #27), then, by hand in the Supabase dashboard, back up `elo_state`, remove the `anon read/write` policy and delete the keys. The session reaches Life Hub from a syncing device or the JSON file, not from Supabase | The anon key can no longer read or write the table |
 
 ## 11. Open questions
 
