@@ -6,7 +6,7 @@
  * - /<app path>/*             each destination app's inbox API (src/destinations.js), e.g.
  *                             /palate (food:inbox), /kyeokyeoi, /potcast, /achievement; plus <path>/v1/sync
  *                             (P6) and <path>/v1/board (P7, scope <id>:board)
- * - /board/*                  Life Board's read API (docs/P7_BOARD.md), scope board:read
+ * - /board/*                  Life Board (docs/P7_BOARD.md): /board/v1/tiles (board:read), /board/v1/sync (board:sync)
  * - /authorize                owner password + consent page (ours)
  * - /oauth/token, /oauth/register, /.well-known/oauth-authorization-server   the library's
  * - /.well-known/oauth-protected-resource/<path>                               each resource's
@@ -104,8 +104,19 @@ export const palateHandler = inboxHandlers.food;
 
 /** Life Board (docs/P7_BOARD.md section 6): reads every app's stored manifest and the Hub's own tile. */
 const APP_NAMES = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, d.app])));
+/** The layout document is small: 64 KiB is far above a full board (P7_BOARD.md section 6.3). */
+export const BOARD_SYNC_LIMITS = Object.freeze({ maxBytes: 65536, keep: 10 });
+const BOARD_SYNC_PREFIX = RESOURCE_PATHS.BOARD + '/v1/sync';
 export const boardHandler = {
   async fetch(request, env, ctx) {
+    const path = new URL(request.url).pathname;
+    if (path === BOARD_SYNC_PREFIX || path.startsWith(BOARD_SYNC_PREFIX + '/')) {
+      // A board grant from stage B1 has board:read only → step-up error, the board asks the owner to reconnect.
+      return guard(env, ctx, 'board', SCOPES.BOARD_SYNC) ?? handleSyncRequest(request, {
+        db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: 'board', prefix: BOARD_SYNC_PREFIX,
+        limits: BOARD_SYNC_LIMITS,
+      });
+    }
     return guard(env, ctx, 'board', SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
       db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), appNames: APP_NAMES,
     });
