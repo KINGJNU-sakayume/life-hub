@@ -188,7 +188,7 @@ test('every app gets <id>:board; Life Board has its own profile only when config
   assert.deepEqual(clientProfiles({}).map((p) => p.id), ['claude'], 'off without its redirect variable');
   const on = clientProfiles({ HUB_BOARD_REDIRECT_URI: APPS.board.page });
   const board = on.find((p) => p.id === 'board');
-  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read', 'board:sync', 'board:inbox']]);
+  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read', 'board:sync', 'board:inbox', 'board:propose']]);
   assert.ok(ALL_SCOPES.includes('board:sync'));
   assert.equal(board.optionalScopes, undefined);
   assert.deepEqual(clientProfiles({ HUB_BOARD_REDIRECT_URI: 'http://insecure.example/board/' }).map((p) => p.id), ['claude']);
@@ -264,7 +264,7 @@ test('end to end: an app uploads with <id>:board, Life Board reads with board:re
     assert.match(board.html, /Life Board/);
     assert.match(board.html, /board:read, board:sync/);
     assert.doesNotMatch(board.html, /name="optional_scope"/);
-    assert.deepEqual(board.token.scope.split(' ').sort(), ['board:inbox', 'board:read', 'board:sync']);
+    assert.deepEqual(board.token.scope.split(' ').sort(), ['board:inbox', 'board:propose', 'board:read', 'board:sync']);
     const b = board.token.access_token;
     const read = await api(env, b, 'GET', '/board/v1/tiles');
     assert.equal(read.status, 200);
@@ -411,5 +411,74 @@ test('end to end: the board reads approved memos with board:inbox; a B1–B3 gra
     const refused = await api(env, legacy.access_token, 'GET', '/board/v1/candidates?status=approved');
     assert.equal(refused.status, 403);
     assert.match(refused.headers.get('WWW-Authenticate') ?? '', /insufficient_scope/);
+  } finally { env.DB.close(); }
+});
+
+/* ---------- B5: roulette proposals (source board, sub station_draw only) ---------- */
+
+const { handleBoardProposal } = await import('../src/board/proposals.js');
+const { putDestinationRefs } = await import('../src/server/store.js');
+const { toSubCandidate } = await import('../src/adapters/sub.js');
+const POOL = [{ id: 's1', label: '서현', group: '수인분당선' }, { id: 's2', label: '수서', group: '수인분당선' }, { id: 's3', label: '수서', group: '3호선' }];
+const sharePool = (db, items = POOL) => putDestinationRefs(db, 'demo-owner', 'sub', 'pool', 1, items, '2026-11-05T00:00:00.000Z');
+const proposal = (patch = {}, payload = { station: '서현' }) => ({ destination: 'sub', type: 'station_draw', idempotency_key: 'board-draw-0001', payload, ...patch });
+const send = (db, body, { method = 'POST', type = 'application/json', raw } = {}) => handleBoardProposal(new Request('https://hub.example/board/v1/proposals', {
+  method, headers: { 'Content-Type': type }, ...(method === 'POST' ? { body: raw ?? JSON.stringify(body) } : {}),
+}), { db, ownerId: 'demo-owner', now: () => NOW });
+
+test('board proposals: only a sub station_draw for a station in the shared pool, source board', async () => {
+  const db = new TestD1();
+  try {
+    assert.equal((await send(db, proposal())).status, 409, 'no pool shared yet');
+    await sharePool(db);
+    assert.equal((await send(db, null, { method: 'GET' })).status, 405);
+    assert.equal((await send(db, proposal(), { type: 'text/plain' })).status, 415);
+    assert.equal((await send(db, null, { raw: '{"x":"' + 'y'.repeat(5000) + '"}' })).status, 413);
+    assert.equal((await send(db, null, { raw: '{bad' })).status, 400);
+    assert.equal((await send(db, proposal({ destination: 'food' }))).status, 403, 'another destination');
+    assert.equal((await send(db, proposal({ type: 'station_visit' }))).status, 403, 'a visit is never proposed by the board');
+    for (const bad of [proposal({ idempotency_key: 'short' }), proposal({ extra: 1 }), proposal({}, { station: '' }), proposal({}, { station: '서현', date: '2026-11-05' })])
+      assert.equal((await send(db, bad)).status, 400, JSON.stringify(bad));
+    assert.equal((await send(db, proposal({}, { station: '강남' }))).status, 409, 'not drawable now');
+
+    const ok = await send(db, proposal());
+    assert.equal(ok.status, 200);
+    const body = await ok.json();
+    assert.deepEqual([body.status, body.duplicate, body.line, body.station, body.date], ['pending', false, '수인분당선', '서현', '2026-11-05']);
+    const row = await db.prepare('SELECT source, destination, envelope_json FROM inbox WHERE id=?').bind(body.candidate_id).first();
+    assert.equal(row.source, 'board');
+    assert.deepEqual(JSON.parse(row.envelope_json).payload, { date: '2026-11-05', line: '수인분당선', station: '서현' });
+    assert.equal((await (await send(db, proposal())).json()).duplicate, true, 'a retry with the same key is the same proposal');
+    assert.equal((await send(db, proposal({}, { station: '수서' }))).status, 409, 'the same key with another station');
+    const picked = await (await send(db, proposal({ idempotency_key: 'board-draw-0002' }, { station: '수서', line: '3호선' }))).json();
+    assert.equal(picked.line, '3호선', 'a given line picks that one');
+    assert.equal((await (await send(db, proposal({ idempotency_key: 'board-draw-0003' }, { station: '수서' }))).json()).line, '수인분당선', 'no line: the first match in the pool');
+  } finally { db.close(); }
+});
+
+test('sub contract: a board source may only carry a station_draw', () => {
+  const env = (type, payload) => ({ hub_version: 1, destination: 'sub', source: 'board', source_ref: 'board:2026-11-05', idempotency_key: 'board-draw-0009',
+    created_at: '2026-11-05T06:00:00Z', candidate_type: type, payload });
+  assert.equal(toSubCandidate(env('station_draw', { date: '2026-11-05', line: '수인분당선', station: '서현' })).source, 'board');
+  assert.throws(() => toSubCandidate(env('station_visit', { station: '서현', date: '2026-11-05' })));
+});
+
+test('end to end: the board proposes with board:propose; an older board grant must reconnect; apps cannot', async () => {
+  const env = makeEnv();
+  try {
+    await sharePool(env.DB);
+    const board = await connect(env, 'board', 'board:read');
+    assert.match(board.html, /역 도장깨기에 <strong>제안<\/strong>/);
+    const r = await api(env, board.token.access_token, 'POST', '/board/v1/proposals', proposal());
+    assert.equal(r.status, 200, await r.clone().text());
+    const narrowed = await call(env, '/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: PAGES },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: board.token.refresh_token, client_id: clientIdOf('board'), scope: 'board:read board:sync board:inbox', resource: ORIGIN + '/board' }) });
+    const legacy = await narrowed.json();
+    assert.equal(narrowed.status, 200, JSON.stringify(legacy));
+    const refused = await api(env, legacy.access_token, 'POST', '/board/v1/proposals', proposal({ idempotency_key: 'board-draw-0004' }));
+    assert.equal(refused.status, 403);
+    assert.match(refused.headers.get('WWW-Authenticate') ?? '', /insufficient_scope/);
+    const app = await connect(env, 'animan', 'animan:inbox');
+    assert.equal((await api(env, app.token.access_token, 'POST', '/board/v1/proposals', proposal({ idempotency_key: 'board-draw-0005' }))).status, 401);
   } finally { env.DB.close(); }
 });

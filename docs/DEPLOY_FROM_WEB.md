@@ -44,7 +44,7 @@ Settings → Secrets and variables → Actions.
 | `HUB_LETTERBOOKXD_REDIRECT_URI` | optional (P3): 책장 (letterbookxd)'s Life Hub callback page, e.g. `https://<user>.github.io/letterbookxd/lifehub/` |
 | `HUB_ACHIEVEMENT_REDIRECT_URI` | optional (P3): 업적 라이브러리's Life Hub callback page, e.g. `https://<user>.github.io/achievement/lifehub/` |
 | `HUB_ELOSORTER_REDIRECT_URI` | optional (P6): ELO Sorter's Life Hub callback page, e.g. `https://<user>.github.io/elosorter/lifehub/`. A sync-only app (no inbox): it keeps its session on the Hub. Apply migration 0009 before using it. |
-| `HUB_BOARD_REDIRECT_URI` | optional (P7): Life Board's Life Hub callback page, e.g. `https://<user>.github.io/board/lifehub/`. Turns on `/board` (reads the apps' board tiles). Apply migration 0010 before using it or any app's `<app>/v1/board`. |
+| `HUB_BOARD_REDIRECT_URI` | optional (P7): Life Board's Life Hub callback page, e.g. `https://<user>.github.io/board/lifehub/`. Turns on `/board` (reads the apps' board tiles). Apply migration 0010 before using it or any app's `<app>/v1/board`, and 0011 before the board sends roulette proposals. |
 
 Optional: Settings → Environments → `production` → add yourself as a required reviewer so every deploy waits for a tap of approval.
 

@@ -45,6 +45,8 @@ export const SCOPES = Object.freeze({
   INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
   /** Life Board reads every app's board tiles (docs/P7_BOARD.md section 6). */
   BOARD_READ: BOARD_READ_SCOPE,
+  /** Life Board's roulette sends a station draw to 역 도장깨기 as a proposal (P7_BOARD.md section 8). */
+  BOARD_PROPOSE: 'board:propose',
 });
 export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast', BOARD: '/board' });
 
@@ -53,7 +55,7 @@ export const ALL_SCOPES = Object.freeze([
   SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope).filter(Boolean),
   ...DESTINATIONS.filter((d) => d.sync).map((d) => d.sync.scope),
   ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
-  ...DESTINATIONS.map(boardScope).filter(Boolean), SCOPES.BOARD_READ,
+  ...DESTINATIONS.map(boardScope).filter(Boolean), SCOPES.BOARD_READ, SCOPES.BOARD_PROPOSE,
 ]);
 
 /** Shown under the grant text on the consent page of an app that syncs (P6_SYNC.md section 7). */
@@ -71,7 +73,7 @@ const BOARD_NOTE = 'Life Board에 보여줄 이 앱의 최근 흐름(타일 목�
 function destinationProfile(d, redirectUri) {
   const profile = {
     id: d.role, role: d.role, redirectUri, resourcePath: d.path,
-    scopes: d.boardClient ? [SCOPES.BOARD_READ, d.sync.scope, d.scope] : [d.scope, d.sync?.scope, boardScope(d)].filter(Boolean),
+    scopes: d.boardClient ? [SCOPES.BOARD_READ, d.sync.scope, d.scope, SCOPES.BOARD_PROPOSE] : [d.scope, d.sync?.scope, boardScope(d)].filter(Boolean),
     allowMissingResource: false, title: d.app, grants: d.grants,
     notes: d.boardClient ? [BOARD_CLIENT_NOTE] : [d.scope && d.sync ? SYNC_NOTE : null, BOARD_NOTE].filter(Boolean),
   };

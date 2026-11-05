@@ -124,7 +124,7 @@ export const DESTINATIONS = Object.freeze([
     card: { approve: true },
     sync: { scope: 'board:sync', maxBytes: 65536, keep: 10 },
     boardClient: true,
-    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽고, 보드 <strong>배치</strong>를 보관하고, Claude 대화 카드에서 <strong>승인한 메모</strong>를 가져올 수 있어요. 앱의 기록을 바꾸지는 못해요.',
+    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽고, 보드 <strong>배치</strong>를 보관하고, Claude 대화 카드에서 <strong>승인한 메모</strong>를 가져오고, 룰렛으로 뽑은 역을 역 도장깨기에 <strong>제안</strong>할 수 있어요. 제안은 역 도장깨기에서 승인하기 전까지 기록이 되지 않고, 보드는 앱의 기록을 바꾸지 못해요.',
   },
 ]);
 
