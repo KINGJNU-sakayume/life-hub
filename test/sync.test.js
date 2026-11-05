@@ -366,7 +366,7 @@ test('an app with an inbox gets inbox and sync together, with no checkbox and no
     assert.doesNotMatch(plain.html, /name="optional_scope"/);
     assert.match(plain.html, /animan:inbox, animan:sync/, 'both scopes are listed on the consent page');
     assert.match(plain.html, /<p>이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요\. 내용은 공개 저장소에 올라가지 않아요\.<\/p>/);
-    assert.deepEqual(scopesOf(plain.token), ['animan:inbox', 'animan:sync'], 'the profile, not the request, decides the grant');
+    assert.deepEqual(scopesOf(plain.token), ['animan:board', 'animan:inbox', 'animan:sync'], 'the profile, not the request, decides the grant');
     assert.equal((await api(env, plain.token.access_token, 'GET', '/animan/v1/candidates')).status, 200, 'the inbox works');
 
     // A grant from before 2026-11-04 holds the inbox scope only; an inbox-only access token (downscoped on refresh)
@@ -388,7 +388,7 @@ test('an app with an inbox gets inbox and sync together, with no checkbox and no
 
     const forged = await connect(env, 'animan', { scope: 'animan:inbox animan:sync',
       ticked: ['letterbookxd:sync', 'elosorter:sync', 'letterbookxd:inbox', 'hub:approve'] });
-    assert.deepEqual(scopesOf(forged.token), ['animan:inbox', 'animan:sync'], "another app's scope in the form is never granted");
+    assert.deepEqual(scopesOf(forged.token), ['animan:board', 'animan:inbox', 'animan:sync'], "another app's scope in the form is never granted");
 
     const withSync = forged;
     const s = withSync.token.access_token;
@@ -412,7 +412,7 @@ test('a sync-only app (ELO Sorter) has the sync scope as its one required scope 
     assert.match(html, /ELO Sorter/);
     assert.match(html, /elosorter:sync/);
     assert.doesNotMatch(html, /name="optional_scope"/);
-    assert.deepEqual(scopesOf(token), ['elosorter:sync']);
+    assert.deepEqual(scopesOf(token), ['elosorter:board', 'elosorter:sync']);
     const t = token.access_token;
     const session = { version: 2, ownerId: 'spotify-user', tracks: [{ id: 't1' }], matches: [], compCount: 0 };
     assert.equal((await api(env, t, 'PUT', '/elosorter/v1/sync', { headers: { 'If-None-Match': '*' }, body: session })).status, 200);

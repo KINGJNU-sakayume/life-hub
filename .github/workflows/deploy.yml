@@ -67,6 +67,7 @@ jobs:
           HUB_ANIMAN_REDIRECT_URI: ${{ vars.HUB_ANIMAN_REDIRECT_URI }}
           HUB_DIARYROULETTE_REDIRECT_URI: ${{ vars.HUB_DIARYROULETTE_REDIRECT_URI }}
           HUB_ELOSORTER_REDIRECT_URI: ${{ vars.HUB_ELOSORTER_REDIRECT_URI }}
+          HUB_BOARD_REDIRECT_URI: ${{ vars.HUB_BOARD_REDIRECT_URI }}
           HUB_SPOTIFY_CLIENT_ID: ${{ vars.HUB_SPOTIFY_CLIENT_ID }}
         run: node scripts/render-wrangler-config.mjs wrangler.example.jsonc wrangler.jsonc
 

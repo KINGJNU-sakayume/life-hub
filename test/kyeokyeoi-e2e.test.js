@@ -87,7 +87,7 @@ test('켜켜이 connects as its own client and sees only its candidates, in its 
     const { html, token } = await connect(env, APPS.kyeokyeoi);
     assert.match(html, /켜켜이/);
     assert.match(html, /kyeokyeoi:inbox/);
-    assert.equal(token.scope, 'kyeokyeoi:inbox');
+    assert.equal(token.scope, 'kyeokyeoi:inbox kyeokyeoi:board', 'the board-tile scope comes with the app (P7)');
 
     const { candidates } = await (await api(env, token.access_token, '/kyeokyeoi/v1/candidates')).json();
     assert.deepEqual(candidates.map((c) => c.candidate.candidate_type).sort(), ['memory', 'visit']);

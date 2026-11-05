@@ -106,7 +106,7 @@ test('PALATE connects with its metadata document and reads pending candidates in
     assert.match(page.html, /PALATE/);
     assert.match(page.html, /owner\.github\.io/);
     assert.match(page.html, /food:inbox/);
-    assert.equal(token.scope, 'food:inbox');
+    assert.equal(token.scope, 'food:inbox food:board', 'the board-tile scope comes with the app (P7)');
 
     const preflight = await call(env, '/palate/v1/receipts', { method: 'OPTIONS', headers: {
       Origin: PALATE_ORIGIN, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization, content-type' } });
