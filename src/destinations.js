@@ -15,6 +15,10 @@
  * required scope (since 2026-11-04; it was an opt-in checkbox before); a SYNC-ONLY app (no `scope`, `types`
  * or `adapter`, e.g. elosorter) has no inbox, candidates or card, and its sync scope is required. Sync-only
  * ids must never be added to the candidate destinations in src/core/candidates.js.
+ *
+ * Every app may also publish its board tiles (docs/P7_BOARD.md) at `<path>/v1/board` with the scope
+ * `<id>:board` (boardScope below), granted with the app's other scopes. Life Board itself is not an entry here
+ * (it has no inbox or adapter yet); its client and resource live in src/board/ and src/auth/clients.js.
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
@@ -108,6 +112,9 @@ export const DESTINATIONS = Object.freeze([
     grants: 'ELO Sorter의 세션(곡·분류·비교 기록)을 이 Life Hub의 비공개 저장소에 <strong>보관하고 다른 기기에서 불러올 수</strong> 있어요. 내용은 공개 저장소에 올라가지 않아요.',
   },
 ]);
+
+/** The OAuth scope with which an app uploads its board manifest (docs/P7_BOARD.md section 5). */
+export const boardScope = (destination) => `${destination.id}:board`;
 
 const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]));
 export const destinationById = (id) => BY_ID.get(id) ?? null;

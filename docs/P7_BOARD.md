@@ -1,7 +1,9 @@
-# P7 — Board API: app tiles, board layout, memos, roulette proposals (design, NOT implemented)
+# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1 in code, rest designed)
 
-> **Status: designed, owner decisions recorded (2026-11-05); not implemented.** Nothing in this document exists in this repository's code. Do not describe it
-> as deployed and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
+> **Status: stage B1 implemented in code (2026-11-05), not deployed; B2–B5 not implemented.** B1 is the upload API, the
+> read API and migration `0010` (`src/board/`, `test/board.test.js`); it needs the migration applied and
+> `HUB_BOARD_REDIRECT_URI` set before anything uses it. Everything from B2 on exists only in this document. Do not describe
+> any of it as deployed and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.
 >
@@ -122,10 +124,12 @@ write allowance. Reads are one indexed query per board refresh (every 5 minutes 
 
 ### 6.1 The `board` destination
 
-A registry entry like the apps: `id: 'board'`, `app: 'Life Board'`, `path: '/board'`, `redirectVar:
-'HUB_BOARD_REDIRECT_URI'`, inbox scope `board:inbox` with type `memo`, sync scope `board:sync`, plus required scopes
-`board:read` and `board:propose`. The consent page lists all four in plain Korean. The board repository serves its
-CIMD document (`lifehub-client.json`) and callback page like the apps.
+Life Board connects like the apps: the board repository serves its CIMD document (`lifehub-client.json`) and callback
+page, and the Hub chooses its profile by the exact redirect URI in `HUB_BOARD_REDIRECT_URI`; resource `/board`, role
+`board`. In stage B1 it is **not** an entry of `src/destinations.js` (that registry assumes an inbox or sync and an
+adapter); its client is `BOARD_CLIENT` in `src/auth/clients.js` with the one scope `board:read`. When B3/B4 give it a
+sync document and an inbox (`board:sync`, `board:inbox` with type `memo`) and B5 adds `board:propose`, it may move into
+the registry; the consent page lists every scope in plain Korean either way.
 
 ### 6.2 `GET /board/v1/tiles` (scope `board:read`)
 

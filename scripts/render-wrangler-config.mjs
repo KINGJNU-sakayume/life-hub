@@ -88,6 +88,12 @@ export const FIELDS = Object.freeze([
     normalize: (v) => v.trim(),
     hint: 'empty, or ELO Sorter\'s Life Hub callback URL such as https://<user>.github.io/elosorter/lifehub/ (no query or fragment)',
   },
+  {
+    env: 'HUB_BOARD_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_BOARD_REDIRECT_URI', optional: true,
+    valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or Life Board\'s Life Hub callback URL such as https://<user>.github.io/board/lifehub/ (no query or fragment)',
+  },
 ]);
 
 export function renderWranglerConfig(exampleText, values) {

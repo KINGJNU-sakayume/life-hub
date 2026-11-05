@@ -64,7 +64,7 @@ test('the registry drives profiles and scopes', () => {
   assert.deepEqual(off.map((p) => p.id), ['claude']);
   const on = clientProfiles({ HUB_ACHIEVEMENT_REDIRECT_URI: 'https://owner.github.io/achievement/lifehub/', HUB_PALATE_REDIRECT_URI: 'https://owner.github.io/food/' });
   assert.deepEqual(on.map((p) => [p.id, p.resourcePath, p.scopes.join()]), [
-    ['claude', '/mcp', 'hub:propose'], ['palate', '/palate', 'food:inbox'], ['achievement', '/achievement', 'achievement:inbox'],
+    ['claude', '/mcp', 'hub:propose'], ['palate', '/palate', 'food:inbox,food:board'], ['achievement', '/achievement', 'achievement:inbox,achievement:board'],
   ]);
   assert.deepEqual(clientProfiles({ HUB_ACHIEVEMENT_REDIRECT_URI: 'http://insecure.example/' }).map((p) => p.id), ['claude']);
 });
