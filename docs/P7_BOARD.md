@@ -1,6 +1,6 @@
 # P7 — Board API: app tiles, board layout, memos, roulette proposals (design, NOT implemented)
 
-> **Status: proposed (2026-11-05).** Nothing in this document exists in this repository's code. Do not describe it
+> **Status: designed, owner decisions recorded (2026-11-05); not implemented.** Nothing in this document exists in this repository's code. Do not describe it
 > as deployed and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.
@@ -74,10 +74,14 @@ Authentication: `Authorization: Bearer <token>` of the app's own resource. Scope
 ### 5.2 What the Hub checks (fail closed)
 
 The board validates every field again before drawing (`board/js/schema.js`), so the Hub checks only what protects
-storage and identity, without copying the whole tile schema:
+storage and identity, without copying the whole tile schema (owner decision, 2026-11-05: split the work this way):
 
-- `Content-Type: application/json`; body at most **256 KiB** of UTF-8 (`413` above). Apps should use image URLs on
-  the board's allowed origins rather than `data:` images to stay well under it.
+- `Content-Type: application/json`; body at most **64 KiB** of UTF-8 (`413` above).
+- **Images are addresses only.** A manifest carries image URLs (the board's allowed origins, for example
+  `image.aladin.co.kr`); the viewer's browser loads them from there and the Hub never stores an image. Any string
+  starting with `data:` anywhere in the body is refused (`400`), so a manifest is text of a few to a few tens of KiB.
+  An image that exists only inside an app's browser storage (no public address) cannot appear on the board; its tile
+  shows a letter instead. Hosting such images is out of scope (P8 or later).
 - `version === 1`; `app` equals the path's destination; `generated_at` is an ISO instant not more than 5 minutes in
   the future; `tiles` is an array of at most 24 objects, each with an `id` matching `^[a-z0-9][a-z0-9-]{0,31}$`
   (unique) and a `tone` in `sleeve hero strip plate map type`.
@@ -101,8 +105,8 @@ CREATE TABLE IF NOT EXISTS board_manifests (
   app          TEXT    NOT NULL CHECK (length(app) BETWEEN 1 AND 40),
   generated_at TEXT    NOT NULL,
   received_at  TEXT    NOT NULL,
-  body_json    TEXT    NOT NULL CHECK (length(body_json) <= 262144),
-  size_bytes   INTEGER NOT NULL CHECK (size_bytes BETWEEN 2 AND 262144),
+  body_json    TEXT    NOT NULL CHECK (length(body_json) <= 65536),
+  size_bytes   INTEGER NOT NULL CHECK (size_bytes BETWEEN 2 AND 65536),
   sha256       TEXT    NOT NULL CHECK (length(sha256) = 64),
   PRIMARY KEY (owner_id, app)
 );
@@ -157,23 +161,24 @@ The board uses the P6 sync API unchanged at `/board/v1/sync` with scope `board:s
 `layout` is exactly what the board stores in `localStorage` today (`board.layout.v1`). Widget settings (location,
 team, timetable) stay **out** of the document: they are per browser (owner decision, 2026-11-05).
 
-### 6.4 Removing a stale app
+### 6.4 An app that is no longer used
 
-An app that was disconnected for good leaves its manifest. The board marks a manifest older than **14 days** as
-"오래됨" with its real age. Removal today: the app's own `DELETE`. Letting the owner remove it from the board
-would be a write (`DELETE /board/v1/tiles/<app>`), so it would need its own scope, not `board:read`; open question 3.
+Its last manifest stays in the Hub and the board marks it "오래됨" (older than **14 days**) with its real age. The
+owner hides its tiles with the board's edit mode (`−`), which only changes the layout. There is no board-side delete
+and no extra write scope (owner decision, 2026-11-05); the app's own `DELETE` remains the only way to remove the data.
 
 ## 7. Claude memos
 
 - Claude proposes with a new MCP tool `propose_board_memo { text, idempotency_key }` under the existing
   `hub:propose` scope (one scope for every conversational proposal tool, so no reconnect). `text` is 1–160
   characters of plain text. The adapter refuses anything else.
-- The candidate goes to destination `board`, type `memo`. It is **pending** until the owner approves: on the board
-  (the board is that destination's app: it reads `GET /board/v1/candidates`, approves or rejects with its inbox
-  scope) or with a conversation card's buttons (`card: { approve: true }`, `hub:approve`), exactly like other
-  destinations. Claude can never approve its own memo (`test/cards.test.js` keeps proving it).
-- Approved is not saved: the board saves the memo into its sync document (`memos`, newest 20) and only then sends the
-  receipt (`POST /board/v1/receipts`, `entity_type: 'memo'`). The memo tile reads the newest saved memo.
+- The candidate goes to destination `board`, type `memo`. It is **pending** until the owner approves it **with a
+  conversation card's buttons only** (`card: { approve: true }`, `hub:approve`; owner decision, 2026-11-05). The board
+  has no approve or reject buttons. Claude can never approve its own memo (`test/cards.test.js` keeps proving it).
+- Approved is not saved: when the board next opens it reads its **approved** memos (`GET /board/v1/candidates?status=approved`
+  with `board:inbox`), saves them into its sync document (`memos`, newest 20) and only then sends the receipt
+  (`POST /board/v1/receipts`, `entity_type: 'memo'`). Pending and rejected memos never reach the board. The memo tile
+  reads the newest saved memo.
 
 ## 8. Roulette proposals
 
@@ -191,25 +196,25 @@ would be a write (`DELETE /board/v1/tiles/<app>`), so it would need its own scop
 
 | Stage | Scope | Done when |
 | --- | --- | --- |
-| B0 | This document reviewed | Owner accepts or edits it; open questions answered |
+| B0 | This document reviewed | Owner decisions recorded in section 10 (done 2026-11-05); owner merges this document |
 | B1 | Hub: migration `0010`, `<app>:board` scopes (granted with the inbox; existing grants reconnect once), `PUT/GET/DELETE <app>/v1/board`, `board` destination with `board:read`, `GET /board/v1/tiles` with the `hub` inbox tile, tests (upload checks, replay, older `generated_at`, size, wrong app, scope), README line "it is not a new dashboard" reworded | `npm run check` green; deployed; a throwaway token uploads a fictional manifest and reads it back |
 | B2 | board repo: OAuth client (CIMD, callback, PKCE), read `/board/v1/tiles` instead of the sample, connect/reconnect/offline states, stale marking | The owner sees real tiles once at least one app uploads; disconnected state is honest |
 | B3 | Layout sync: `board:sync` shape check here; board repo syncs `layout` with P6 rules | Two browsers converge on one layout |
-| B4 | Memos: `memo` type and `propose_board_memo`, card support; board repo approves, saves into its document, sends receipts | A memo proposed in a conversation appears only after approval |
+| B4 | Memos: `memo` type and `propose_board_memo`, card approval; board repo reads approved memos, saves them into its document, sends receipts | A memo proposed in a conversation appears only after approval |
 | B5 | Roulette: migration `0011` (source `board`), `board:propose`, `POST /board/v1/proposals`; board repo unlocks the button | The sub app receives a `station_draw` proposal from the board |
 | A* | Each app: wire its existing `buildBoardTiles` (from the board prompts) to `PUT …/v1/board`, debounced | That app's tiles are real on the board |
 
 B1 and the apps' pure `buildBoardTiles` functions (already assigned per repository through `board/docs/prompts/`)
 can proceed in parallel; an app uploads only after B1 is deployed.
 
-## 10. Open questions (owner)
+## 10. Owner decisions (formerly open questions)
 
-1. **Hub validation depth.** Proposed: the minimal check in 5.2, the full schema only on the board. Alternative:
-   copy the board schema into the Hub too (stricter, but two copies to keep in step).
-2. **Size cap.** 256 KiB per app manifest. Too high or low?
-3. **Removing a stale app's tiles from the board.** Add a separate owner scope (for example `board:manage`) for
-   `DELETE /board/v1/tiles/<app>`, or leave removal to the app only?
-4. **Memo approval places.** On the board and in conversation cards (proposed), or only one of them?
+All answered on 2026-11-05; this list stays as the record.
+
+1. ~~Hub validation depth~~ — **split**: the Hub checks storage and identity (5.2), the board checks every tile.
+2. ~~Size cap~~ — **64 KiB, image addresses only, `data:` refused** (5.2).
+3. ~~Removing an unused app's tiles~~ — **hide with edit mode only**; no board-side delete, no extra scope (6.4).
+4. ~~Memo approval places~~ — **conversation cards only** (7).
 5. ~~Widget settings across devices~~ — **decided 2026-11-05: per browser.** They stay out of the board's sync
    document.
 6. ~~Roulette alternative~~ — **decided 2026-11-05: the board sends a proposal** (stage B5), not "open the sub app
