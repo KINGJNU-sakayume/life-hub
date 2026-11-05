@@ -182,12 +182,13 @@ test('the Hub manifest fits the board tile shape', () => {
 /* ---------- registry and profiles ---------- */
 
 test('every app gets <id>:board; Life Board has its own profile only when configured', () => {
-  for (const d of DESTINATIONS) assert.ok(ALL_SCOPES.includes(`${d.id}:board`), d.id);
+  for (const d of DESTINATIONS.filter((x) => !x.boardClient)) assert.ok(ALL_SCOPES.includes(`${d.id}:board`), d.id);
+  assert.ok(!ALL_SCOPES.includes('board:board'), 'Life Board uploads no tiles of its own');
   assert.ok(ALL_SCOPES.includes('board:read'));
   assert.deepEqual(clientProfiles({}).map((p) => p.id), ['claude'], 'off without its redirect variable');
   const on = clientProfiles({ HUB_BOARD_REDIRECT_URI: APPS.board.page });
   const board = on.find((p) => p.id === 'board');
-  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read', 'board:sync']]);
+  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read', 'board:sync', 'board:inbox']]);
   assert.ok(ALL_SCOPES.includes('board:sync'));
   assert.equal(board.optionalScopes, undefined);
   assert.deepEqual(clientProfiles({ HUB_BOARD_REDIRECT_URI: 'http://insecure.example/board/' }).map((p) => p.id), ['claude']);
@@ -263,7 +264,7 @@ test('end to end: an app uploads with <id>:board, Life Board reads with board:re
     assert.match(board.html, /Life Board/);
     assert.match(board.html, /board:read, board:sync/);
     assert.doesNotMatch(board.html, /name="optional_scope"/);
-    assert.deepEqual(board.token.scope.split(' ').sort(), ['board:read', 'board:sync']);
+    assert.deepEqual(board.token.scope.split(' ').sort(), ['board:inbox', 'board:read', 'board:sync']);
     const b = board.token.access_token;
     const read = await api(env, b, 'GET', '/board/v1/tiles');
     assert.equal(read.status, 200);
@@ -334,5 +335,81 @@ test('end to end: Life Board keeps its layout with board:sync; a B1 grant must r
     const app = await connect(env, 'animan', 'animan:inbox');
     assert.equal((await sync(app.token.access_token, 'GET')).status, 401, "an app token is not valid for Life Board's layout");
     assert.equal((await api(env, b, 'GET', '/animan/v1/sync')).status, 401, "Life Board's token cannot read an app's sync document");
+  } finally { env.DB.close(); }
+});
+
+/* ---------- B4: Claude memos (destination board, type memo, approved in cards only) ---------- */
+
+const { toBoardCandidate } = await import('../src/adapters/board.js');
+const { handleMcpRequest } = await import('../src/mcp/protocol.js');
+const { handleInboxRequest } = await import('../src/inbox/api.js');
+const memoEnvelope = (patch = {}, payload = { text: '시청은 늘고 독서는 잠시 쉬었어요.' }) => ({
+  hub_version: 1, destination: 'board', source: 'claude', source_ref: 'claude-mcp:2026-11-05', idempotency_key: 'memo-key-0001',
+  created_at: '2026-11-05T06:00:00Z', candidate_type: 'memo', payload, ...patch,
+});
+
+test('memo contract: Claude only, 1–160 characters, one plain paragraph', () => {
+  assert.equal(toBoardCandidate(memoEnvelope()).payload.text, '시청은 늘고 독서는 잠시 쉬었어요.');
+  assert.equal(toBoardCandidate(memoEnvelope({}, { text: '가'.repeat(160) })).payload.text.length, 160);
+  for (const [patch, payload, why] of [
+    [{ source: 'codex' }, undefined, 'codex cannot propose (no card approval)'], [{ source: 'chatgpt' }, undefined, 'chatgpt'], [{ source: 'manual' }, undefined, 'manual'],
+    [{ candidate_type: 'note' }, undefined, 'type'], [{}, { text: '' }, 'empty'], [{}, { text: '가'.repeat(161) }, '161'],
+    [{}, { text: '두 줄\n메모' }, 'line break'], [{}, { text: ' 앞뒤 공백 ' }, 'untrimmed'], [{}, { text: 'x', title: 'y' }, 'extra field'], [{}, { text: 3 }, 'not text'],
+  ]) assert.throws(() => toBoardCandidate(memoEnvelope(patch, payload)), undefined, why);
+});
+
+test('memo flow: Claude proposes, only the card approves, the board reads approved memos and sends the receipt', async () => {
+  const db = new TestD1();
+  let seq = 0;
+  const rpc = async (method, params, { source = 'claude', scopes = ['hub:propose', 'hub:approve'] } = {}) => (await (await handleMcpRequest(new Request('https://hub.example/mcp', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params }),
+  }), { db, ownerId: 'demo-owner', now: () => NOW, allowedOrigins: ['https://hub.example'], scopes, source, appUrls: {} })).json());
+  const inbox = (path, init) => handleInboxRequest(new Request('https://hub.example/board/v1' + path, init), { db, ownerId: 'demo-owner', now: () => NOW, destination: 'board', prefix: '/board/v1' });
+  try {
+    for (const source of ['codex', 'chatgpt']) {
+      const names = (await rpc('tools/list', {}, { source, scopes: ['hub:propose'] })).result.tools.map((t) => t.name);
+      assert.ok(!names.includes('propose_board_memo'), `${source} does not see the memo tool`);
+      const r = await rpc('tools/call', { name: 'propose_board_memo', arguments: { text: '메모' } }, { source, scopes: ['hub:propose'] });
+      assert.ok(r.error || r.result?.isError, `${source} cannot call it`);
+    }
+    const listed = (await rpc('tools/list', {})).result.tools.find((t) => t.name === 'propose_board_memo');
+    assert.equal(listed._meta.ui.resourceUri, 'ui://life-hub/card-board.html', 'Claude gets the memo card');
+
+    const proposed = (await rpc('tools/call', { name: 'propose_board_memo', arguments: { text: '  시청은 늘고   독서는 잠시 쉬었어요.  ' } })).result;
+    assert.equal(proposed.structuredContent.status, 'pending');
+    const id = proposed.structuredContent.candidate_id, ticket = proposed._meta['life-hub/card'].ticket;
+    assert.equal((await (await inbox('/candidates?status=approved')).json()).candidates.length, 0, 'a pending memo never reaches the board');
+
+    const approved = (await rpc('tools/call', { name: 'card_approve', arguments: { candidate_id: id, ticket, revision: 0 } })).result;
+    assert.ok(!approved.isError, JSON.stringify(approved));
+    const list = (await (await inbox('/candidates?status=approved')).json()).candidates;
+    assert.equal(list.length, 1);
+    assert.equal(list[0].candidate.payload.text, '시청은 늘고 독서는 잠시 쉬었어요.', 'whitespace normalized by the tool');
+    const receipt = await inbox('/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: list[0].key, entity_type: 'memo', entity_id: 'memo-1' }) });
+    assert.equal(receipt.status, 200, await receipt.clone().text());
+    assert.equal((await db.prepare('SELECT status FROM inbox WHERE id=?').bind(id).first()).status, 'confirmed');
+    const wrongType = await inbox('/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: list[0].key, entity_type: 'meal', entity_id: 'x' }) });
+    assert.equal(wrongType.status, 400, 'only memo receipts');
+  } finally { db.close(); }
+});
+
+test('end to end: the board reads approved memos with board:inbox; a B1–B3 grant keeps tiles and layout and must reconnect for memos', async () => {
+  const env = makeEnv();
+  try {
+    const board = await connect(env, 'board', 'board:read');
+    assert.match(board.html, /승인한 Claude 메모/);
+    const b = board.token.access_token;
+    assert.equal((await api(env, b, 'GET', '/board/v1/candidates?status=approved')).status, 200);
+    assert.equal((await api(env, b, 'PUT', '/board/v1/board', manifest({ app: 'board' }))).status, 404, 'Life Board uploads no tiles of its own');
+    const narrowed = await call(env, '/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: PAGES },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: board.token.refresh_token, client_id: clientIdOf('board'), scope: 'board:read board:sync', resource: ORIGIN + '/board' }) });
+    const legacy = await narrowed.json();
+    assert.equal(narrowed.status, 200, JSON.stringify(legacy));
+    assert.equal((await api(env, legacy.access_token, 'GET', '/board/v1/tiles')).status, 200, 'tiles keep working');
+    assert.equal((await call(env, '/board/v1/sync/meta', { headers: { Authorization: 'Bearer ' + legacy.access_token, Origin: PAGES } })).status, 404, 'layout keeps working (no document yet)');
+    const refused = await api(env, legacy.access_token, 'GET', '/board/v1/candidates?status=approved');
+    assert.equal(refused.status, 403);
+    assert.match(refused.headers.get('WWW-Authenticate') ?? '', /insufficient_scope/);
   } finally { env.DB.close(); }
 });

@@ -183,6 +183,14 @@ const reviewSchema = {
   type: 'object', additionalProperties: false, required: [],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$', description: 'A specific album returned by an earlier review_listening call; omit for the next one.' } },
 };
+const memoSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['text'],
+  properties: {
+    text: { type: 'string', minLength: 1, maxLength: 160, description: 'One short observation for the owner\'s Life Board, in Korean unless the user writes otherwise, at most 160 characters, one paragraph. About the user\'s recent flow they talked about (what they watched, read, listened to, visited), never sensitive details, never advice or instructions.' },
+  },
+};
 const statusSchema = {
   type: 'object', additionalProperties: false, required: ['candidate_id'],
   properties: { candidate_id: { type: 'string', pattern: '^[0-9a-f-]{36}$' } },
@@ -291,6 +299,13 @@ export const TOOLS = Object.freeze([
     annotations: WRITE,
   },
   {
+    name: 'propose_board_memo',
+    title: 'Propose a memo for Life Board',
+    description: 'Propose ONE short memo (one observation, at most 160 characters) for the owner\'s Life Board, the page of tiles that shows their recent flow. Use only when the user asks for a note on their board or agrees when you offer one; never on your own. Write it from what the user told you, plainly, without praise, advice or sensitive details. It stays a PENDING proposal and appears on the board only after the owner approves it in the card. Identical proposals are de-duplicated.',
+    inputSchema: memoSchema,
+    annotations: WRITE,
+  },
+  {
     name: 'propose_region_visit',
     title: 'Propose a region visit for 켜켜이',
     description: 'Propose that the user has actually been to a region (city, county or district) for their 켜켜이 visit map. Use ONLY when the user explicitly says they went, visited, travelled to or stayed there. Never for plans or wishes, never because a place appears in a memory, and never inferred from where they live or work. ' + pendingNote('켜켜이') + ' The owner picks the exact region when approving.',
@@ -335,7 +350,7 @@ const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
   propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', review_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
   propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_station_draw: 'sub', propose_media_progress: 'animan',
-  propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette',
+  propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette', propose_board_memo: 'board',
 });
 /** Cards are a Claude feature for now; the card may approve only with an explicit hub:approve grant. */
 const isClaude = (context) => (context.source ?? 'claude') === 'claude';
@@ -345,7 +360,8 @@ export const canUseCards = (context) => isClaude(context) && (context.scopes ?? 
 export function toolsFor(context) {
   const source = context.source ?? 'claude';
   let tools = source === 'chatgpt' ? [...TOOLS] : TOOLS.filter((t) => t.name !== 'preview_reading_record');
-  if (source !== 'claude') return tools;
+  // Board memos are approved only in Claude cards, so only Claude may propose them (src/adapters/board.js).
+  if (source !== 'claude') return tools.filter((t) => t.name !== 'propose_board_memo');
   tools = tools.map((t) => {
     const card = cardFor(PROPOSE_DESTINATION[t.name]);
     // `ui/resourceUri` is the older flat key some hosts still read; `ui.resourceUri` is the current one.
@@ -755,6 +771,10 @@ export async function callTool(name, args, context) {
       outcome = await propose(context, 'kyeokyeoi', 'memory', pick(args, memorySchema));
     } else if (name === 'propose_region_visit') {
       outcome = await propose(context, 'kyeokyeoi', 'visit', pick(args, visitSchema));
+    } else if (name === 'propose_board_memo') {
+      if (sourceFor(context) !== 'claude') return null;
+      const { text } = pick(args, memoSchema);
+      outcome = await propose(context, 'board', 'memo', { text: text.replace(/\s+/g, ' ').trim() });
     } else if (name === 'propose_daily_mission') {
       pick(args ?? {}, { required: [], properties: {} });
       outcome = await proposeDailyMission(context);

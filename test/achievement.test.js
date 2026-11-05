@@ -58,7 +58,7 @@ test('propose_activity_record stores a pending achievement candidate under hub:p
 });
 
 test('the registry drives profiles and scopes', () => {
-  assert.deepEqual(DESTINATIONS.map((d) => d.id), ['food', 'kyeokyeoi', 'potcast', 'achievement', 'letterbookxd', 'sub', 'animan', 'diaryroulette', 'elosorter']);
+  assert.deepEqual(DESTINATIONS.map((d) => d.id), ['food', 'kyeokyeoi', 'potcast', 'achievement', 'letterbookxd', 'sub', 'animan', 'diaryroulette', 'elosorter', 'board']);
   assert.ok(ALL_SCOPES.includes('achievement:inbox') && ALL_SCOPES.includes('hub:propose') && ALL_SCOPES.includes('food:propose'));
   const off = clientProfiles({});
   assert.deepEqual(off.map((p) => p.id), ['claude']);
