@@ -1,9 +1,10 @@
-# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1 in code, rest designed)
+# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1 deployed, B2 in the board repository, B3 in code, B4–B5 designed)
 
-> **Status: stage B1 implemented in code (2026-11-05), not deployed; B2–B5 not implemented.** B1 is the upload API, the
-> read API and migration `0010` (`src/board/`, `test/board.test.js`); it needs the migration applied and
-> `HUB_BOARD_REDIRECT_URI` set before anything uses it. Everything from B2 on exists only in this document. Do not describe
-> any of it as deployed and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
+> **Status (2026-11-05).** B1 (upload API, read API, migration `0010`; `src/board/`, `test/board.test.js`) is merged
+> (PR #44) and deployed with the migration. B2 (the board connects and reads real tiles) is in the board repository
+> (board PR #3). B3 (layout sync, `board:sync`) is in code here and not deployed; a board grant made under B1 lacks
+> `board:sync` and must reconnect once. B4–B5 exist only in this document. Do not describe anything as deployed beyond
+> this line and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.
 >
@@ -151,8 +152,13 @@ the registry; the consent page lists every scope in plain Korean either way.
 
 ### 6.3 Layout across devices: the board's sync document
 
-The board uses the P6 sync API unchanged at `/board/v1/sync` with scope `board:sync`. Shape check (in
-`src/sync/checks.js`): `app === 'board' && version === 1 && isObject(layout)`, with `memos` optional array.
+The board uses the P6 sync API unchanged at `/board/v1/sync` with scope `board:sync` (B3: `boardHandler` in
+`src/server/index.js`, limit 64 KiB and 10 kept versions). Shape check (in `src/sync/checks.js`): `app === 'board' &&
+version === 1 && isObject(layout)`, with `memos` optional array.
+
+Merge rule on the board side: a layout is one owner's arrangement, not records, so on `412` the board takes the
+newest document's version and writes its own **latest local edit** on top (the edit the owner just made wins). On
+start, and on each refresh while nothing local is waiting, a newer remote version replaces the local layout.
 
 ```json
 {

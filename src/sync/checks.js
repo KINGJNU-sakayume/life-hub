@@ -14,6 +14,8 @@ const CHECKS = Object.freeze({
   letterbookxd: (d) => d.app === 'letterbookxd' && d.version === 2 && Array.isArray(d.logs) &&
     (d.tombstones === undefined || Array.isArray(d.tombstones)),
   elosorter: (d) => d.version === 2 && Array.isArray(d.tracks),
+  // Life Board's layout (docs/P7_BOARD.md section 6.3). Not a destination; served by the board handler.
+  board: (d) => d.app === 'board' && d.version === 1 && isObject(d.layout) && (d.memos === undefined || Array.isArray(d.memos)),
 });
 
 /** True when `doc` has the shape this destination's sync document must have. */

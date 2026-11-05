@@ -10,6 +10,7 @@ import { checkManifest, BOARD_LIMITS } from '../src/board/checks.js';
 import { handleManifestRequest, handleBoardRequest, hubManifest } from '../src/board/api.js';
 import { clientProfiles, ALL_SCOPES } from '../src/auth/clients.js';
 import { DESTINATIONS } from '../src/destinations.js';
+import { checkSyncDocument } from '../src/sync/checks.js';
 
 globalThis.Cloudflare = { compatibilityFlags: { global_fetch_strictly_public: true } };
 const PAGES = 'https://owner.github.io';
@@ -186,7 +187,8 @@ test('every app gets <id>:board; Life Board has its own profile only when config
   assert.deepEqual(clientProfiles({}).map((p) => p.id), ['claude'], 'off without its redirect variable');
   const on = clientProfiles({ HUB_BOARD_REDIRECT_URI: APPS.board.page });
   const board = on.find((p) => p.id === 'board');
-  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read']]);
+  assert.deepEqual([board.role, board.resourcePath, board.scopes], ['board', '/board', ['board:read', 'board:sync']]);
+  assert.ok(ALL_SCOPES.includes('board:sync'));
   assert.equal(board.optionalScopes, undefined);
   assert.deepEqual(clientProfiles({ HUB_BOARD_REDIRECT_URI: 'http://insecure.example/board/' }).map((p) => p.id), ['claude']);
 });
@@ -259,9 +261,9 @@ test('end to end: an app uploads with <id>:board, Life Board reads with board:re
 
     const board = await connect(env, 'board', 'board:read');
     assert.match(board.html, /Life Board/);
-    assert.match(board.html, /board:read/);
+    assert.match(board.html, /board:read, board:sync/);
     assert.doesNotMatch(board.html, /name="optional_scope"/);
-    assert.equal(board.token.scope, 'board:read');
+    assert.deepEqual(board.token.scope.split(' ').sort(), ['board:read', 'board:sync']);
     const b = board.token.access_token;
     const read = await api(env, b, 'GET', '/board/v1/tiles');
     assert.equal(read.status, 200);
@@ -284,5 +286,53 @@ test('Life Board is off (503) without its redirect variable; apps keep working',
     assert.equal((await call(env, '/.well-known/oauth-protected-resource/board')).status, 503);
     const app = await connect(env, 'animan', 'animan:inbox');
     assert.equal((await api(env, app.token.access_token, 'PUT', '/animan/v1/board', manifest({ generated_at: new Date().toISOString() }))).status, 200);
+  } finally { env.DB.close(); }
+});
+
+/* ---------- B3: the board's layout document (P6 sync API at /board/v1/sync) ---------- */
+
+const layoutDoc = (extra = {}) => ({ app: 'board', version: 1, layout: { v: 1, g: { day: [['board:weather', '2x2']] }, tray: [] }, ...extra });
+
+test('layout document shape check', () => {
+  assert.equal(checkSyncDocument('board', layoutDoc()), true);
+  assert.equal(checkSyncDocument('board', layoutDoc({ memos: [] })), true);
+  for (const bad of [layoutDoc({ app: 'animan' }), layoutDoc({ version: 2 }), layoutDoc({ layout: [] }), layoutDoc({ memos: {} }), { app: 'board', version: 1 }])
+    assert.equal(checkSyncDocument('board', bad), false, JSON.stringify(bad));
+});
+
+test('end to end: Life Board keeps its layout with board:sync; a B1 grant must reconnect; apps cannot touch it', async () => {
+  const env = makeEnv();
+  try {
+    const board = await connect(env, 'board', 'board:read board:sync');
+    const b = board.token.access_token;
+    const sync = (token, method, path = '', { headers = {}, body } = {}) => call(env, '/board/v1/sync' + path, {
+      method, headers: { Authorization: 'Bearer ' + token, Origin: PAGES, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    assert.equal((await sync(b, 'GET')).status, 404, 'no layout yet');
+    const first = await sync(b, 'PUT', '', { headers: { 'If-None-Match': '*' }, body: layoutDoc() });
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).version, 1);
+    assert.deepEqual((await (await sync(b, 'GET')).json()).doc, layoutDoc());
+    const stale = await sync(b, 'PUT', '', { headers: { 'If-None-Match': '*' }, body: layoutDoc() });
+    assert.equal(stale.status, 412, 'a second first-write is stale: the board merges and retries with If-Match');
+    assert.equal((await sync(b, 'PUT', '', { headers: { 'If-Match': '"1"' }, body: layoutDoc({ layout: { v: 1, g: {}, tray: ['board:weather'] } }) })).status, 200);
+    assert.equal((await sync(b, 'PUT', '', { headers: { 'If-Match': '"2"' }, body: { app: 'board', version: 1 } })).status, 400, 'shape check');
+    assert.equal((await sync(b, 'PUT', '', { headers: { 'If-Match': '"2"' }, body: layoutDoc({ pad: 'x'.repeat(70000) }) })).status, 413, '64 KiB cap');
+    assert.equal((await (await sync(b, 'GET', '/meta')).json()).version, 2);
+
+    // A grant from stage B1 (board:read only), stood in for by a downscoped refresh: tiles work, layout asks to reconnect.
+    const narrowed = await call(env, '/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Origin: PAGES },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: board.token.refresh_token, client_id: clientIdOf('board'), scope: 'board:read', resource: ORIGIN + '/board' }) });
+    const legacy = await narrowed.json();
+    assert.equal(narrowed.status, 200, JSON.stringify(legacy));
+    assert.equal((await api(env, legacy.access_token, 'GET', '/board/v1/tiles')).status, 200);
+    const refused = await sync(legacy.access_token, 'GET');
+    assert.equal(refused.status, 403);
+    assert.match(refused.headers.get('WWW-Authenticate') ?? '', /insufficient_scope/);
+
+    const app = await connect(env, 'animan', 'animan:inbox');
+    assert.equal((await sync(app.token.access_token, 'GET')).status, 401, "an app token is not valid for Life Board's layout");
+    assert.equal((await api(env, b, 'GET', '/animan/v1/sync')).status, 401, "Life Board's token cannot read an app's sync document");
   } finally { env.DB.close(); }
 });

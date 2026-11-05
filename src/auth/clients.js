@@ -45,6 +45,8 @@ export const SCOPES = Object.freeze({
   INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
   /** Life Board reads every app's board tiles (docs/P7_BOARD.md section 6). */
   BOARD_READ: 'board:read',
+  /** Life Board keeps its layout in one sync document (P6 API at /board/v1/sync; P7_BOARD.md section 6.3). */
+  BOARD_SYNC: 'board:sync',
 });
 export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast', BOARD: '/board' });
 
@@ -56,7 +58,7 @@ export const ALL_SCOPES = Object.freeze([
   SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope).filter(Boolean),
   ...DESTINATIONS.filter((d) => d.sync).map((d) => d.sync.scope),
   ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
-  ...DESTINATIONS.map(boardScope), SCOPES.BOARD_READ,
+  ...DESTINATIONS.map(boardScope), SCOPES.BOARD_READ, SCOPES.BOARD_SYNC,
 ]);
 
 /** Shown under the grant text on the consent page of an app that syncs (P6_SYNC.md section 7). */
@@ -79,13 +81,16 @@ function destinationProfile(d, redirectUri) {
   return profile;
 }
 
-/** Life Board's profile (docs/P7_BOARD.md section 6): reads the stored manifests, nothing else in stage B1. */
+/**
+ * Life Board's profile (docs/P7_BOARD.md section 6): reads the stored manifests (B1) and keeps its layout in one sync
+ * document (B3). A grant from B1 holds board:read only; its layout sync answers 403 insufficient_scope until it reconnects.
+ */
 function boardProfile(redirectUri) {
   return {
-    id: 'board', role: 'board', redirectUri, resourcePath: RESOURCE_PATHS.BOARD, scopes: [SCOPES.BOARD_READ],
+    id: 'board', role: 'board', redirectUri, resourcePath: RESOURCE_PATHS.BOARD, scopes: [SCOPES.BOARD_READ, SCOPES.BOARD_SYNC],
     allowMissingResource: false, title: 'Life Board',
-    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽을 수 있어요. 앱의 기록을 바꾸지는 못해요.',
-    notes: [],
+    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽고, 보드 <strong>배치</strong>를 보관할 수 있어요. 앱의 기록을 바꾸지는 못해요.',
+    notes: ['보드 배치(어떤 타일을 어디에 어떤 크기로)를 Life Hub의 비공개 저장소에 보관해 다른 기기에서도 같게 보여요.'],
   };
 }
 
