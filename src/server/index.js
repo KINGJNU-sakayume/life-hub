@@ -21,7 +21,7 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
-import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES, BOARD_CLIENT } from '../auth/clients.js';
+import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
 import { DESTINATIONS, redirectUriFor, appUrlFor, boardScope } from '../destinations.js';
 import { handleManifestRequest, handleBoardRequest } from '../board/api.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
@@ -32,7 +32,7 @@ import { pollSpotify } from '../spotify/sync.js';
 import { deleteExpiredTickets } from './store.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
-const OAUTH_PATHS = new RegExp(`^/(?:mcp|board|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
+const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const notConfigured = () => new Response(JSON.stringify({ error: 'OAuth is not configured' }), { status: 503, headers: JSON_HEADERS });
 const forbidden = () => new Response(JSON.stringify({ error: 'Token is not valid for this Life Hub' }), { status: 403, headers: JSON_HEADERS });
@@ -71,15 +71,23 @@ export const mcpHandler = {
  * One handler per destination app: `<path>/v1/sync*` is the device sync API and needs the app's sync scope
  * (an inbox-only token gets a step-up error); everything else under `<path>/v1` is the inbox API and needs
  * the inbox scope. A sync-only app has no inbox, so its other paths are 404.
+ * Life Board (`boardClient`) also serves `/board/v1/tiles` (board:read) and uploads no tiles of its own.
  */
+const APP_NAMES = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, d.app])));
 function destinationHandler(d) {
   const prefix = d.path + '/v1';
   const syncPrefix = prefix + '/sync';
   const boardPath = prefix + '/board';
+  const tilesPath = prefix + '/tiles';
   return {
     async fetch(request, env, ctx) {
       const path = new URL(request.url).pathname;
-      if (path === boardPath || path.startsWith(boardPath + '/')) {
+      if (d.boardClient && path === tilesPath) {
+        return guard(env, ctx, d.role, SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
+          db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), appNames: APP_NAMES,
+        });
+      }
+      if (!d.boardClient && (path === boardPath || path.startsWith(boardPath + '/'))) {
         // Board tiles (docs/P7_BOARD.md section 5): a grant from before P7 lacks the scope → step-up, the app reconnects.
         return guard(env, ctx, d.role, boardScope(d)) ?? handleManifestRequest(request, {
           db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), app: d.id, path: boardPath,
@@ -102,32 +110,11 @@ function destinationHandler(d) {
 export const inboxHandlers = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, destinationHandler(d)])));
 export const palateHandler = inboxHandlers.food;
 
-/** Life Board (docs/P7_BOARD.md section 6): reads every app's stored manifest and the Hub's own tile. */
-const APP_NAMES = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, d.app])));
-/** The layout document is small: 64 KiB is far above a full board (P7_BOARD.md section 6.3). */
-export const BOARD_SYNC_LIMITS = Object.freeze({ maxBytes: 65536, keep: 10 });
-const BOARD_SYNC_PREFIX = RESOURCE_PATHS.BOARD + '/v1/sync';
-export const boardHandler = {
-  async fetch(request, env, ctx) {
-    const path = new URL(request.url).pathname;
-    if (path === BOARD_SYNC_PREFIX || path.startsWith(BOARD_SYNC_PREFIX + '/')) {
-      // A board grant from stage B1 has board:read only → step-up error, the board asks the owner to reconnect.
-      return guard(env, ctx, 'board', SCOPES.BOARD_SYNC) ?? handleSyncRequest(request, {
-        db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: 'board', prefix: BOARD_SYNC_PREFIX,
-        limits: BOARD_SYNC_LIMITS,
-      });
-    }
-    return guard(env, ctx, 'board', SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
-      db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), appNames: APP_NAMES,
-    });
-  },
-};
-
 export function createServers(origin) {
   const mcpResource = origin + RESOURCE_PATHS.MCP;
   const authorizationServer = new OAuthAuthorizationServer({
     issuer: origin,
-    resources: [mcpResource, origin + RESOURCE_PATHS.BOARD, ...DESTINATIONS.map((d) => origin + d.path)],
+    resources: [mcpResource, ...DESTINATIONS.map((d) => origin + d.path)],
     // Older MCP clients may omit `resource`; they mean the MCP endpoint.
     defaultResource: mcpResource,
     authorizeEndpoint: origin + '/authorize',
@@ -162,14 +149,11 @@ export function createServers(origin) {
   const inboxes = new Map(DESTINATIONS.map((d) => [d.id, new OAuthResourceServer({
     resourceMetadata: { resource: origin + d.path, authorization_servers: [origin] },
     // The resource's base scope: the inbox scope, or the sync scope for a sync-only app. Sync routes of an app
-    // with an inbox check their own scope again in destinationHandler.
-    requiredScopes: [d.scope ?? d.sync.scope], validateToken, handler: inboxHandlers[d.id],
+    // with an inbox check their own scope again in destinationHandler. Life Board's base scope is board:read, so its
+    // grants from before it had an inbox keep reading tiles.
+    requiredScopes: [d.boardClient ? SCOPES.BOARD_READ : (d.scope ?? d.sync.scope)], validateToken, handler: inboxHandlers[d.id],
   })]));
-  const board = new OAuthResourceServer({
-    resourceMetadata: { resource: origin + RESOURCE_PATHS.BOARD, authorization_servers: [origin] },
-    requiredScopes: [SCOPES.BOARD_READ], validateToken, handler: boardHandler,
-  });
-  return { authorizationServer, mcp, inboxes, board };
+  return { authorizationServer, mcp, inboxes };
 }
 
 const under = (path, base) => path === base || path.startsWith(base + '/');
@@ -187,10 +171,6 @@ export default {
 
     if (under(path, RESOURCE_PATHS.MCP) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.MCP))
       return s.mcp.fetch(request, env, ctx);
-    if (under(path, RESOURCE_PATHS.BOARD) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.BOARD)) {
-      if (!redirectUriFor(env, BOARD_CLIENT)) return notConfigured();
-      return s.board.fetch(request, env, ctx);
-    }
     for (const d of DESTINATIONS) {
       if (under(path, d.path) || under(path, '/.well-known/oauth-protected-resource' + d.path)) {
         if (!redirectUriFor(env, d)) return notConfigured();

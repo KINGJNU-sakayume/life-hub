@@ -17,8 +17,12 @@
  * ids must never be added to the candidate destinations in src/core/candidates.js.
  *
  * Every app may also publish its board tiles (docs/P7_BOARD.md) at `<path>/v1/board` with the scope
- * `<id>:board` (boardScope below), granted with the app's other scopes. Life Board itself is not an entry here
- * (it has no inbox or adapter yet); its client and resource live in src/board/ and src/auth/clients.js.
+ * `<id>:board` (boardScope below), granted with the app's other scopes.
+ *
+ * `boardClient: true` marks Life Board itself (P7 B4): it is a destination for `memo` candidates (approved in Claude
+ * cards only) with a sync document for its layout, and it reads every app's tiles (`board:read`, /board/v1/tiles).
+ * It never uploads tiles of its own, so it has no `board:board` scope. Its base scope is `board:read`, so grants from
+ * stages B1–B3 keep reading tiles; its inbox answers 403 insufficient_scope until it reconnects.
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
@@ -28,6 +32,7 @@ import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
 import { toSubCandidate } from './adapters/sub.js';
 import { toAnimanCandidate } from './adapters/animan.js';
 import { toDiaryrouletteCandidate } from './adapters/diaryroulette.js';
+import { toBoardCandidate } from './adapters/board.js';
 
 export const DESTINATIONS = Object.freeze([
   {
@@ -111,10 +116,23 @@ export const DESTINATIONS = Object.freeze([
     sync: { scope: 'elosorter:sync' },
     grants: 'ELO Sorter의 세션(곡·분류·비교 기록)을 이 Life Hub의 비공개 저장소에 <strong>보관하고 다른 기기에서 불러올 수</strong> 있어요. 내용은 공개 저장소에 올라가지 않아요.',
   },
+  {
+    // Life Board (docs/P7_BOARD.md): reads every app's tiles, keeps its layout, saves approved Claude memos.
+    id: 'board', app: 'Life Board', role: 'board', path: '/board', scope: 'board:inbox',
+    redirectVar: 'HUB_BOARD_REDIRECT_URI', types: ['memo'], adapter: toBoardCandidate, label: 'board',
+    // Memos are approved only in Claude cards; the board saves `approved` memos into its document, then sends a receipt.
+    card: { approve: true },
+    sync: { scope: 'board:sync', maxBytes: 65536, keep: 10 },
+    boardClient: true,
+    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽고, 보드 <strong>배치</strong>를 보관하고, Claude 대화 카드에서 <strong>승인한 메모</strong>를 가져올 수 있어요. 앱의 기록을 바꾸지는 못해요.',
+  },
 ]);
 
 /** The OAuth scope with which an app uploads its board manifest (docs/P7_BOARD.md section 5). */
-export const boardScope = (destination) => `${destination.id}:board`;
+export const boardScope = (destination) => (destination.boardClient ? null : `${destination.id}:board`);
+
+/** The scope Life Board needs for every request to its resource (tiles); its inbox and sync check their own. */
+export const BOARD_READ_SCOPE = 'board:read';
 
 const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]));
 export const destinationById = (id) => BY_ID.get(id) ?? null;

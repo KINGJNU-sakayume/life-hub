@@ -1,9 +1,11 @@
-# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1 deployed, B2 in the board repository, B3 in code, B4–B5 designed)
+# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1–B3 deployed, B4 in code, B5 designed)
 
 > **Status (2026-11-05).** B1 (upload API, read API, migration `0010`; `src/board/`, `test/board.test.js`) is merged
 > (PR #44) and deployed with the migration. B2 (the board connects and reads real tiles) is in the board repository
-> (board PR #3). B3 (layout sync, `board:sync`) is in code here and not deployed; a board grant made under B1 lacks
-> `board:sync` and must reconnect once. B4–B5 exist only in this document. Do not describe anything as deployed beyond
+> (board PR #3, merged and deployed). B3 (layout sync, `board:sync`) is merged (PR #45, board PR #4) and deployed.
+> B4 (Claude memos: Life Board becomes a registry destination with inbox type `memo`, tool `propose_board_memo`,
+> card approval) is in code here and not deployed; a board grant made before B4 keeps tiles and layout and must
+> reconnect for memos. B5 exists only in this document. Do not describe anything as deployed beyond
 > this line and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.
@@ -125,12 +127,12 @@ write allowance. Reads are one indexed query per board refresh (every 5 minutes 
 
 ### 6.1 The `board` destination
 
-Life Board connects like the apps: the board repository serves its CIMD document (`lifehub-client.json`) and callback
-page, and the Hub chooses its profile by the exact redirect URI in `HUB_BOARD_REDIRECT_URI`; resource `/board`, role
-`board`. In stage B1 it is **not** an entry of `src/destinations.js` (that registry assumes an inbox or sync and an
-adapter); its client is `BOARD_CLIENT` in `src/auth/clients.js` with the one scope `board:read`. When B3/B4 give it a
-sync document and an inbox (`board:sync`, `board:inbox` with type `memo`) and B5 adds `board:propose`, it may move into
-the registry; the consent page lists every scope in plain Korean either way.
+Since B4, Life Board is an entry of `src/destinations.js` with `boardClient: true`: role `board`, resource `/board`,
+redirect variable `HUB_BOARD_REDIRECT_URI`, inbox scope `board:inbox` (type `memo`), sync scope `board:sync`, and the
+extra scope `board:read` (`/board/v1/tiles`). It never uploads tiles of its own (no `board:board`). Its resource's base
+scope is `board:read`, so grants made in B1–B3 keep reading tiles and syncing the layout; its inbox answers 403
+`insufficient_scope` until the board reconnects. The board repository serves its CIMD document
+(`lifehub-client.json`) and callback page like the apps. (In B1–B3 it was a separate client in `src/auth/clients.js`.)
 
 ### 6.2 `GET /board/v1/tiles` (scope `board:read`)
 

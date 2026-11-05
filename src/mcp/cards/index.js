@@ -11,6 +11,7 @@ import { SUB_CARD_URI, SUB_CARD_HTML } from './sub.js';
 import { ANIMAN_CARD_URI, ANIMAN_CARD_HTML } from './animan.js';
 import { POTCAST_CARD_URI, POTCAST_CARD_HTML } from './potcast.js';
 import { LETTERBOOKXD_CARD_URI, LETTERBOOKXD_CARD_HTML } from './letterbookxd.js';
+import { BOARD_CARD_URI, BOARD_CARD_HTML } from './board.js';
 import { CARD_MIME, CARD_RESOURCE_META } from './shell.js';
 
 const CARDS = Object.freeze({
@@ -22,6 +23,7 @@ const CARDS = Object.freeze({
   animan: { uri: ANIMAN_CARD_URI, html: ANIMAN_CARD_HTML, name: 'life-hub-card-animan', title: 'AniMan 진행 카드', labels: { media_progress: '진행 기록' } },
   potcast: { uri: POTCAST_CARD_URI, html: POTCAST_CARD_HTML, name: 'life-hub-card-potcast', title: 'potcast 앨범 카드', labels: { album_listening: '앨범 감상' } },
   letterbookxd: { uri: LETTERBOOKXD_CARD_URI, html: LETTERBOOKXD_CARD_HTML, name: 'life-hub-card-letterbookxd', title: '책장 독서 카드', labels: { reading_record: '독서 기록' } },
+  board: { uri: BOARD_CARD_URI, html: BOARD_CARD_HTML, name: 'life-hub-card-board', title: 'Life Board 메모 카드', labels: { memo: '보드 메모' } },
 });
 
 export const cardFor = (destination) => CARDS[destination] ?? null;

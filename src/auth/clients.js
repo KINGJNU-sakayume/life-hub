@@ -5,7 +5,7 @@
  * client, so a client cannot ask for another profile's scope or resource. Every profile receives
  * exactly its own scopes, for exactly its own resource.
  */
-import { DESTINATIONS, redirectUriFor, boardScope } from '../destinations.js';
+import { DESTINATIONS, redirectUriFor, boardScope, BOARD_READ_SCOPE } from '../destinations.js';
 
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 /** ChatGPT uses this stable callback when OAuth issuer identification is supported. */
@@ -44,25 +44,22 @@ export const SCOPES = Object.freeze({
   PROPOSE: 'food:propose', KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose',
   INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
   /** Life Board reads every app's board tiles (docs/P7_BOARD.md section 6). */
-  BOARD_READ: 'board:read',
-  /** Life Board keeps its layout in one sync document (P6 API at /board/v1/sync; P7_BOARD.md section 6.3). */
-  BOARD_SYNC: 'board:sync',
+  BOARD_READ: BOARD_READ_SCOPE,
 });
 export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast', BOARD: '/board' });
-
-/** Life Board's client: not a destination (no inbox or adapter yet), chosen by its own redirect variable. */
-export const BOARD_CLIENT = Object.freeze({ id: 'board', redirectVar: 'HUB_BOARD_REDIRECT_URI' });
 
 /** Every scope the authorization server knows: MCP proposals, legacy scopes, destination inboxes and sync. */
 export const ALL_SCOPES = Object.freeze([
   SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope).filter(Boolean),
   ...DESTINATIONS.filter((d) => d.sync).map((d) => d.sync.scope),
   ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
-  ...DESTINATIONS.map(boardScope), SCOPES.BOARD_READ, SCOPES.BOARD_SYNC,
+  ...DESTINATIONS.map(boardScope).filter(Boolean), SCOPES.BOARD_READ,
 ]);
 
 /** Shown under the grant text on the consent page of an app that syncs (P6_SYNC.md section 7). */
 const SYNC_NOTE = '이 앱의 기록을 Life Hub의 비공개 저장소에 보관하고 다른 기기에서 불러올 수 있어요. 내용은 공개 저장소에 올라가지 않아요.';
+/** Life Board's consent page (P7_BOARD.md sections 6–7). */
+const BOARD_CLIENT_NOTE = '보드 배치(어떤 타일을 어디에 어떤 크기로)와 승인한 Claude 메모를 Life Hub의 비공개 저장소에 보관해 다른 기기에서도 같게 보여요.';
 /** Shown on every app's consent page (P7_BOARD.md section 5): the board-tile upload scope comes with the app. */
 const BOARD_NOTE = 'Life Board에 보여줄 이 앱의 최근 흐름(타일 목록)을 올릴 수 있어요. 목록은 Life Hub에 앱마다 최신 하나만 보관돼요.';
 
@@ -74,24 +71,11 @@ const BOARD_NOTE = 'Life Board에 보여줄 이 앱의 최근 흐름(타일 목�
 function destinationProfile(d, redirectUri) {
   const profile = {
     id: d.role, role: d.role, redirectUri, resourcePath: d.path,
-    scopes: [d.scope, d.sync?.scope, boardScope(d)].filter(Boolean),
+    scopes: d.boardClient ? [SCOPES.BOARD_READ, d.sync.scope, d.scope] : [d.scope, d.sync?.scope, boardScope(d)].filter(Boolean),
     allowMissingResource: false, title: d.app, grants: d.grants,
-    notes: [d.scope && d.sync ? SYNC_NOTE : null, BOARD_NOTE].filter(Boolean),
+    notes: d.boardClient ? [BOARD_CLIENT_NOTE] : [d.scope && d.sync ? SYNC_NOTE : null, BOARD_NOTE].filter(Boolean),
   };
   return profile;
-}
-
-/**
- * Life Board's profile (docs/P7_BOARD.md section 6): reads the stored manifests (B1) and keeps its layout in one sync
- * document (B3). A grant from B1 holds board:read only; its layout sync answers 403 insufficient_scope until it reconnects.
- */
-function boardProfile(redirectUri) {
-  return {
-    id: 'board', role: 'board', redirectUri, resourcePath: RESOURCE_PATHS.BOARD, scopes: [SCOPES.BOARD_READ, SCOPES.BOARD_SYNC],
-    allowMissingResource: false, title: 'Life Board',
-    grants: '각 앱이 올린 <strong>보드 타일 목록</strong>과 승인을 기다리는 제안 <strong>개수</strong>를 읽고, 보드 <strong>배치</strong>를 보관할 수 있어요. 앱의 기록을 바꾸지는 못해요.',
-    notes: ['보드 배치(어떤 타일을 어디에 어떤 크기로)를 Life Hub의 비공개 저장소에 보관해 다른 기기에서도 같게 보여요.'],
-  };
 }
 
 export function clientProfiles(env) {
@@ -107,14 +91,12 @@ export function clientProfiles(env) {
     // Older MCP clients may omit `resource`; the authorization server defaults it to /mcp.
     allowMissingResource: true,
     title: 'Claude',
-    grants: '음식·추억·방문·음악 감상·활동·독서·역 방문·애니 진행 기록 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
+    grants: '음식·추억·방문·음악 감상·활동·독서·역 방문·애니 진행 기록과 보드 메모 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
   }];
   for (const d of DESTINATIONS) {
     const redirectUri = redirectUriFor(env, d);
     if (redirectUri) profiles.push(destinationProfile(d, redirectUri));
   }
-  const boardRedirect = redirectUriFor(env, BOARD_CLIENT);
-  if (boardRedirect) profiles.push(boardProfile(boardRedirect));
   return profiles;
 }
 

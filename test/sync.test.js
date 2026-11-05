@@ -304,7 +304,7 @@ test('registry: every app has an inbox or sync, every sync app has a shape check
     }
   }
   assert.deepEqual(DESTINATIONS.filter((d) => !d.scope).map((d) => d.id), ['elosorter']);
-  assert.deepEqual(syncCheckedDestinations().sort(), [...DESTINATIONS.filter((d) => d.sync).map((d) => d.id), 'board'].sort(), 'every syncing app, plus Life Board');
+  assert.deepEqual(syncCheckedDestinations().sort(), DESTINATIONS.filter((d) => d.sync).map((d) => d.id).sort());
   assert.equal(checkSyncDocument('food', { version: 2, tracks: [] }), false, 'a destination without a check fails closed');
   assert.equal(checkSyncDocument('elosorter', { version: 2, tracks: [] }), true);
   assert.equal(checkSyncDocument('elosorter', { version: 1, tracks: [] }), false);
