@@ -155,7 +155,7 @@ The board uses the P6 sync API unchanged at `/board/v1/sync` with scope `board:s
 ```
 
 `layout` is exactly what the board stores in `localStorage` today (`board.layout.v1`). Widget settings (location,
-team, timetable) stay **out** of the document for now: they are per-browser on purpose (open question 5).
+team, timetable) stay **out** of the document: they are per browser (owner decision, 2026-11-05).
 
 ### 6.4 Removing a stale app
 
@@ -210,8 +210,7 @@ can proceed in parallel; an app uploads only after B1 is deployed.
 3. **Removing a stale app's tiles from the board.** Add a separate owner scope (for example `board:manage`) for
    `DELETE /board/v1/tiles/<app>`, or leave removal to the app only?
 4. **Memo approval places.** On the board and in conversation cards (proposed), or only one of them?
-5. **Widget settings across devices.** Keep per-browser (proposed; the timetable and location are personal and
-   small), or put them in the board's sync document too?
-6. **Roulette alternative.** Instead of the board proposing, the board could open the sub app with the drawn station
-   preselected (no new scope or migration, but the owner must finish in the app). Proposed: the proposal (stage B5),
-   as decided on 2026-11-04.
+5. ~~Widget settings across devices~~ — **decided 2026-11-05: per browser.** They stay out of the board's sync
+   document.
+6. ~~Roulette alternative~~ — **decided 2026-11-05: the board sends a proposal** (stage B5), not "open the sub app
+   with the station preselected".
