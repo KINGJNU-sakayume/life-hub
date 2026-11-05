@@ -23,7 +23,7 @@ import {
   listDestinationCandidates, confirmCandidateByKey, rejectCandidateByKey, putDestinationRefs, finalEnvelope, StoreFailure,
 } from '../server/store.js';
 
-const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual', 'spotify']);
+const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual', 'spotify', 'board']);
 const STATUS_FILTERS = { pending: 'pending', approved: 'approved', open: ['pending', 'approved'], all: null };
 const REF_ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9_.:-]{8,128}$/;

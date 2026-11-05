@@ -24,6 +24,7 @@ import { handleAuthorize } from '../auth/owner-login.js';
 import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
 import { DESTINATIONS, redirectUriFor, appUrlFor, boardScope } from '../destinations.js';
 import { handleManifestRequest, handleBoardRequest } from '../board/api.js';
+import { handleBoardProposal } from '../board/proposals.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
 import { handleInboxRequest } from '../inbox/api.js';
 import { handleSyncRequest } from '../sync/api.js';
@@ -79,12 +80,19 @@ function destinationHandler(d) {
   const syncPrefix = prefix + '/sync';
   const boardPath = prefix + '/board';
   const tilesPath = prefix + '/tiles';
+  const proposalsPath = prefix + '/proposals';
   return {
     async fetch(request, env, ctx) {
       const path = new URL(request.url).pathname;
       if (d.boardClient && path === tilesPath) {
         return guard(env, ctx, d.role, SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
           db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), appNames: APP_NAMES,
+        });
+      }
+      if (d.boardClient && path === proposalsPath) {
+        // Roulette proposals (P7_BOARD.md section 8): a board grant from before B5 lacks the scope → step-up, reconnect.
+        return guard(env, ctx, d.role, SCOPES.BOARD_PROPOSE) ?? handleBoardProposal(request, {
+          db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(),
         });
       }
       if (!d.boardClient && (path === boardPath || path.startsWith(boardPath + '/'))) {
