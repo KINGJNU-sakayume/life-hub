@@ -87,7 +87,9 @@ test('resources: every card is a small self-contained mcp-app page with no exter
     const [content] = read.result.contents;
     assert.equal(content.mimeType, 'text/html;profile=mcp-app');
     assert.deepEqual(content._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
-    assert.ok(Buffer.byteLength(content.text) < 25000, `card is ${Buffer.byteLength(content.text)} bytes`);
+    // Size budget per card (shared runtime + one destination). Raised from 25000 when the card runtime learned to settle a
+    // 409 by itself; the largest card (achievement) is ~25.6 kB.
+    assert.ok(Buffer.byteLength(content.text) < 27000, `card is ${Buffer.byteLength(content.text)} bytes`);
     assert.match(content.text, /^<!doctype html>/);
     // No remote code, styles, images or network calls.
     assert.doesNotMatch(content.text, /<script[^>]+src=|<link[^>]+href=|<img|url\(|@import|fetch\(|XMLHttpRequest|WebSocket|EventSource/);
@@ -184,6 +186,84 @@ test('no approval without the right connection, scope and ticket', async () => {
       assert.equal(await statusOf(db, id), 'approved');
     });
   } finally { db.close(); }
+});
+
+/** A D1 stand-in where every statement takes a little time, so overlapping requests really interleave. */
+class SlowD1 extends TestD1 {
+  #n = 0;
+  prepare(sql) {
+    const base = super.prepare(sql);
+    const lag = () => new Promise((resolve) => setTimeout(resolve, 1 + (this.#n++ % 3)));
+    return { bind: (...args) => {
+      const bound = base.bind(...args);
+      return { run: async () => { await lag(); return bound.run(); }, first: async () => { await lag(); return bound.first(); }, all: async () => { await lag(); return bound.all(); } };
+    } };
+  }
+}
+const resetTicket = (db, id) => db.prepare('UPDATE card_tickets SET used_at=NULL, used_for=NULL WHERE candidate_id=?').bind(id).run();
+const eventsOf = async (db, id, status) => (await db.prepare('SELECT COUNT(*) AS n FROM inbox_changes WHERE candidate_id=? AND status=?').bind(id, status).first()).n;
+
+test('the same approval repeated or overlapping is not a conflict; a different outcome or revision still is', async () => {
+  const db = new TestD1();
+  try {
+    await withApproval(async () => {
+      const { id, ticket } = await proposed(db);
+      const first = await call(db, 'card_approve', { candidate_id: id, ticket, revision: 0 });
+      assert.equal(first.structuredContent.card.status, 'approved');
+      // The gap between "status changed" and "ticket marked used" (a crash, a retried request): the repeat is the same decision.
+      await resetTicket(db, id);
+      const repeat = await call(db, 'card_approve', { candidate_id: id, ticket, revision: 0 });
+      assert.equal(repeat.isError, undefined);
+      assert.equal(repeat.structuredContent.card.status, 'approved');
+      assert.equal(await eventsOf(db, id, 'approved'), 1, 'still exactly one approval event');
+      assert.ok((await db.prepare('SELECT used_for FROM card_tickets WHERE candidate_id=?').bind(id).first()).used_for === 'approve');
+      // Another revision (edited elsewhere in between) or the opposite decision is still refused.
+      await resetTicket(db, id);
+      const otherRevision = await call(db, 'card_approve', { candidate_id: id, ticket, revision: 7 });
+      assert.equal(otherRevision.structuredContent.error, 'conflict');
+      const opposite = await call(db, 'card_reject', { candidate_id: id, ticket });
+      assert.equal(opposite.structuredContent.error, 'conflict');
+      assert.equal(await statusOf(db, id), 'approved');
+    });
+  } finally { db.close(); }
+});
+
+test('the same rejection repeated is not a conflict, but approving a rejected candidate is', async () => {
+  const db = new TestD1();
+  try {
+    await withApproval(async () => {
+      const { id, ticket } = await proposed(db);
+      assert.equal((await call(db, 'card_reject', { candidate_id: id, ticket })).structuredContent.card.status, 'rejected');
+      await resetTicket(db, id);
+      const repeat = await call(db, 'card_reject', { candidate_id: id, ticket });
+      assert.equal(repeat.isError, undefined);
+      assert.equal(repeat.structuredContent.card.status, 'rejected');
+      assert.equal(await eventsOf(db, id, 'rejected'), 1);
+      await resetTicket(db, id);
+      const approve = await call(db, 'card_approve', { candidate_id: id, ticket, revision: 0 });
+      assert.equal(approve.structuredContent.error, 'conflict');
+      assert.equal(await statusOf(db, id), 'rejected');
+    });
+  } finally { db.close(); }
+});
+
+test('two approvals of one card that overlap in time both succeed and approve exactly once', async () => {
+  await withApproval(async () => {
+    for (let round = 0; round < 8; round += 1) {
+      const db = new SlowD1();
+      try {
+        const { id, ticket } = await proposed(db, { ...MEAL, menu_name: `Synthetic ramen ${round}` });
+        const args = { candidate_id: id, ticket, revision: 0 };
+        const one = call(db, 'card_approve', args);
+        await new Promise((resolve) => setTimeout(resolve, round)); // the second request lands at a different point of the first
+        const [a, b] = await Promise.all([one, call(db, 'card_approve', args)]);
+        assert.equal(a.isError, undefined, `round ${round}: first ${JSON.stringify(a.structuredContent)}`);
+        assert.equal(b.isError, undefined, `round ${round}: second ${JSON.stringify(b.structuredContent)}`);
+        assert.equal(await statusOf(db, id), 'approved');
+        assert.equal(await eventsOf(db, id, 'approved'), 1);
+      } finally { db.close(); }
+    }
+  });
 });
 
 test('edits are validated, keep the original proposal, and lock by revision', async () => {
