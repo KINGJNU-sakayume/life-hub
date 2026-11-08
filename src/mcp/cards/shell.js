@@ -57,7 +57,7 @@ textarea{min-height:76px;padding:10px 12px;resize:vertical}
 .plist{display:flex;flex-wrap:wrap;gap:6px;max-height:176px;overflow:auto}
 .confirm{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--err);border-radius:10px}
 .confirm p{margin:0;flex:1 1 180px;font-weight:600;color:var(--err-ink)}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.sr{position:absolute;top:0;left:0;margin:0;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (max-width:360px){.two{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 `;
@@ -135,10 +135,20 @@ function take(result){
 function act(name,args,live){
   if(S.busy)return;S.busy=true;S.error=null;render();
   args.candidate_id=S.card.candidate_id;args.ticket=S.ticket;
-  request('tools/call',{name:name,arguments:args}).then(function(r){S.busy=false;S.mode='view';take(r);S.live=S.error?'':live;render();
-    if(name==='card_approve'&&!S.error&&B.afterApprove)B.afterApprove(S.card,function(path){if(S.card.app_url)request('ui/open-link',{url:S.card.app_url+(path||'')}).catch(function(){});});},
+  request('tools/call',{name:name,arguments:args}).then(function(r){S.busy=false;S.mode='view';take(r);
+    if(S.error==='conflict'&&(name==='card_approve'||name==='card_reject')){settle(name,live);return;}
+    finish(name,live);},
     function(e){S.busy=false;S.error=(e&&e.message)||'연결을 확인해 주세요.';render();});
 }
+function finish(name,live){S.live=S.error?'':live;render();
+  if(name==='card_approve'&&!S.error&&B.afterApprove)B.afterApprove(S.card,function(path){if(S.card.app_url)request('ui/open-link',{url:S.card.app_url+(path||'')}).catch(function(){});});}
+// A 409 on approve/reject often only means the same decision already went through (a repeated request, a second open copy
+// of this card). Load the current state: if it is what the owner asked for, show it as done; otherwise say what changed.
+function settle(name,live){var want=name==='card_approve'?'approved':'rejected';S.busy=true;S.error=null;render();
+  request('tools/call',{name:'card_refresh',arguments:{candidate_id:S.card.candidate_id,ticket:S.ticket}}).then(function(r){S.busy=false;take(r);
+    if(!S.error){if(S.card.status===want||S.card.status==='confirmed'){finish(name,live);return;}S.error='다른 곳에서 먼저 바뀌었어요. 최신 내용으로 바꿨으니 다시 확인해 주세요.';}
+    S.live='';render();},
+    function(){S.busy=false;S.error='conflict';S.live='';render();});}
 root.addEventListener('click',function(e){
   var chip=e.target.closest('.chip');
   if(chip){var g=chip.parentNode,on=chip.getAttribute('aria-pressed')==='true';

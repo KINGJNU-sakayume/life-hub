@@ -196,33 +196,54 @@ export async function editCardCandidate(db, ownerId, id, ticket, revision, paylo
  */
 export async function approveCardCandidate(db, ownerId, id, ticket, revision, { appReview = false } = {}, at) {
   const t = await ticketFor(db, ownerId, id, ticket, at);
-  const rec = await ownRecord(db, ownerId, id);
+  let rec = await ownRecord(db, ownerId, id);
   if (t.used_at) {
     if (t.used_for === 'approve' && rec.status !== 'pending') return rec;
     throw new StoreFailure(409, 'This card was already used');
   }
-  if (rec.status !== 'pending') throw new StoreFailure(409, `Candidate is already ${rec.status}`);
-  const result = await db.prepare(`UPDATE inbox SET status='approved',approved_at=?,needs_app_review=?
-    WHERE owner_id=? AND id=? AND status='pending' AND revision=?`).bind(at, appReview ? 1 : 0, ownerId, id, revision).run();
-  if (result.meta.changes !== 1) throw new StoreFailure(409, 'Candidate changed elsewhere; reload the card');
-  await useTicket(db, t, 'approve', at);
-  return ownRecord(db, ownerId, id);
+  if (rec.status === 'pending') {
+    const result = await db.prepare(`UPDATE inbox SET status='approved',approved_at=?,needs_app_review=?
+      WHERE owner_id=? AND id=? AND status='pending' AND revision=?`).bind(at, appReview ? 1 : 0, ownerId, id, revision).run();
+    if (result.meta.changes === 1) {
+      await useTicket(db, t, 'approve', at);
+      return ownRecord(db, ownerId, id);
+    }
+    // Zero rows: someone else got there first. Look again before calling it a conflict.
+    rec = await ownRecord(db, ownerId, id);
+  }
+  // The same decision on the same revision already went through (a repeated or overlapping request from this card,
+  // or a second open copy of it): the owner's intent is met, so answer with the current record instead of a conflict.
+  // A different revision (edited elsewhere) or another outcome (rejected, saved by the app) stays a conflict.
+  if (rec.status === 'approved' && rec.revision === revision) {
+    await useTicket(db, t, 'approve', at);
+    return rec;
+  }
+  throw new StoreFailure(409, rec.status === 'pending' ? 'Candidate changed elsewhere; reload the card' : `Candidate is already ${rec.status}`);
 }
 
 /** The owner rejected the pending candidate in the card. Repeats with the same ticket are idempotent. */
 export async function rejectCardCandidate(db, ownerId, id, ticket, at) {
   const t = await ticketFor(db, ownerId, id, ticket, at);
-  const rec = await ownRecord(db, ownerId, id);
+  let rec = await ownRecord(db, ownerId, id);
   if (t.used_at) {
     if (t.used_for === 'reject' && rec.status === 'rejected') return rec;
     throw new StoreFailure(409, 'This card was already used');
   }
-  if (rec.status !== 'pending') throw new StoreFailure(409, `Candidate is already ${rec.status}`);
-  const result = await db.prepare(`UPDATE inbox SET status='rejected',reviewed_at=? WHERE owner_id=? AND id=? AND status='pending'`)
-    .bind(at, ownerId, id).run();
-  if (result.meta.changes !== 1) throw new StoreFailure(409, 'Candidate changed elsewhere; reload the card');
-  await useTicket(db, t, 'reject', at);
-  return ownRecord(db, ownerId, id);
+  if (rec.status === 'pending') {
+    const result = await db.prepare(`UPDATE inbox SET status='rejected',reviewed_at=? WHERE owner_id=? AND id=? AND status='pending'`)
+      .bind(at, ownerId, id).run();
+    if (result.meta.changes === 1) {
+      await useTicket(db, t, 'reject', at);
+      return ownRecord(db, ownerId, id);
+    }
+    rec = await ownRecord(db, ownerId, id);
+  }
+  // Already rejected (a repeated or overlapping request): same outcome the owner asked for, not a conflict.
+  if (rec.status === 'rejected') {
+    await useTicket(db, t, 'reject', at);
+    return rec;
+  }
+  throw new StoreFailure(409, rec.status === 'pending' ? 'Candidate changed elsewhere; reload the card' : `Candidate is already ${rec.status}`);
 }
 
 /** Housekeeping for the hourly cron: drop expired tickets. */
