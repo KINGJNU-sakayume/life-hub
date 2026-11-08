@@ -1,12 +1,14 @@
-# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1–B4 deployed, B5 in code)
+# P7 — Board API: app tiles, board layout, memos, roulette proposals (B1–B5 deployed)
 
 > **Status (2026-11-05).** B1 (upload API, read API, migration `0010`; `src/board/`, `test/board.test.js`) is merged
 > (PR #44) and deployed with the migration. B2 (the board connects and reads real tiles) is in the board repository
 > (board PR #3, merged and deployed). B3 (layout sync, `board:sync`) is merged (PR #45, board PR #4) and deployed.
 > B4 (Claude memos: Life Board becomes a registry destination with inbox type `memo`, tool `propose_board_memo`,
 > card approval) is merged (PR #46, board PR #5) and deployed. B5 (roulette proposals, migration `0011`, source
-> `board`, scope `board:propose`) is in code here and not deployed; it needs the migration applied. Do not describe anything as deployed beyond
-> this line and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
+> `board`, scope `board:propose`) is merged (PR #47, board PR #7) and deployed with the migration (2026-11-05).
+> App side (checked 2026-11-08): sub (2026-11-06), potcast, AniMan, letterbookxd and elosorter (2026-11-07) upload
+> their tile manifests; food, kyeokyeoi, achievement and diaryroulette do not yet. Do not describe anything as
+> deployed beyond this line and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.
 >
