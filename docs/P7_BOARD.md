@@ -6,8 +6,8 @@
 > B4 (Claude memos: Life Board becomes a registry destination with inbox type `memo`, tool `propose_board_memo`,
 > card approval) is merged (PR #46, board PR #5) and deployed. B5 (roulette proposals, migration `0011`, source
 > `board`, scope `board:propose`) is merged (PR #47, board PR #7) and deployed with the migration (2026-11-05).
-> App side (checked 2026-11-08): sub (2026-11-06), potcast, AniMan, letterbookxd and elosorter (2026-11-07) upload
-> their tile manifests; food, kyeokyeoi, achievement and diaryroulette do not yet. Do not describe anything as
+> App side (checked 2026-11-08): all nine apps upload their tile manifests: sub (2026-11-06); potcast, AniMan,
+> letterbookxd and elosorter (2026-11-07); food, kyeokyeoi, achievement and diaryroulette (2026-11-08). Do not describe anything as
 > deployed beyond this line and do not fake an API for it (AGENTS.md, "Before any remote synchronization…"). Each stage below
 > needs its own explicit task. This replaces the earlier "status cards" draft (PR #41): the board is now a separate
 > site with live tiles, and apps publish **tiles**, not weekly numbers.

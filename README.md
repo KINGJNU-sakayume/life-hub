@@ -23,18 +23,18 @@ No proposal becomes a record without the owner's approval in its destination app
 
 ## Connected apps
 
-Destination apps are separate repositories, declared in `src/destinations.js`. Status as of 2026-11-07:
+Destination apps are separate repositories, declared in `src/destinations.js`. Status as of 2026-11-08:
 
 | App | Repository | Inbox + Claude cards | Device sync (P6) | Board tiles (P7) |
 |---|---|---|---|---|
-| PALATE (food) | [food](https://github.com/KINGJNU-sakayume/food) | ✓ | – | not yet |
-| 켜켜이 | [kyeokyeoi](https://github.com/KINGJNU-sakayume/kyeokyeoi) | ✓ | – | not yet |
+| PALATE (food) | [food](https://github.com/KINGJNU-sakayume/food) | ✓ | – | ✓ (2026-11-08) |
+| 켜켜이 | [kyeokyeoi](https://github.com/KINGJNU-sakayume/kyeokyeoi) | ✓ | – | ✓ (2026-11-08) |
 | potcast | [potcast](https://github.com/KINGJNU-sakayume/potcast) | ✓ (+ hourly Spotify sync, P3) | – | ✓ (2026-11-07) |
-| 업적 라이브러리 | [achievement](https://github.com/KINGJNU-sakayume/achievement) | ✓ | – | not yet |
+| 업적 라이브러리 | [achievement](https://github.com/KINGJNU-sakayume/achievement) | ✓ | – | ✓ (2026-11-08) |
 | 책장 | [letterbookxd](https://github.com/KINGJNU-sakayume/letterbookxd) | ✓ | ✓ | ✓ (2026-11-07) |
 | 역 도장깨기 | [sub](https://github.com/KINGJNU-sakayume/sub) | ✓ (+ station draws proposed by the board's roulette) | – | ✓ (2026-11-06) |
 | AniMan | [animan](https://github.com/KINGJNU-sakayume/animan) | ✓ | ✓ | ✓ (2026-11-07) |
-| 일기 룰렛 | [diaryroulette](https://github.com/KINGJNU-sakayume/diaryroulette) | ✓ | – | not yet |
+| 일기 룰렛 | [diaryroulette](https://github.com/KINGJNU-sakayume/diaryroulette) | ✓ | – | ✓ (2026-11-08) |
 | ELO Sorter | [elosorter](https://github.com/KINGJNU-sakayume/elosorter) | – (sync only) | ✓ | ✓ (2026-11-07) |
 | Life Board | [board](https://github.com/KINGJNU-sakayume/board) | memos only (approved in Claude cards) | ✓ (board layout) | reads every app's tiles |
 
