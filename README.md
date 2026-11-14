@@ -53,11 +53,11 @@ Node.js's experimental SQLite API runs the SQL migrations in an in-memory databa
 ## Implementation
 
 - `src/core/candidates.js`: Hub v1 schema and idempotency semantics, in memory.
-- `src/adapters/food.js`: exact translation to PALATE local inbox format, no direct approval.
+- `src/adapters/food.js`: exact translation to PALATE local inbox format, no direct approval. The other `src/adapters/*.js` files (kyeokyeoi, potcast, achievement, letterbookxd, sub, animan, diaryroulette, board) do the same for each destination; `index.js` registers them.
 - `src/server/index.js`: Worker entry; wires OAuth, `/authorize`, `/mcp` and the P1 routes.
 - `src/server/worker.js`: P1 HTTP routes (`/health`, `/v1/*`).
 - `src/auth/owner-login.js`: owner password check, throttle, redirect allowlist, consent page.
-- `src/mcp/protocol.js` + `src/mcp/tools.js`: stateless MCP endpoint and the food proposal tools.
+- `src/mcp/protocol.js` + `src/mcp/tools.js`: stateless MCP endpoint and the proposal tools. `src/mcp/reading-widget.js` is the small no-network reading-preview card (P5).
 - `src/auth/clients.js`: client profiles (Claude, Codex loopback, destination apps): redirect URI → scope + resource.
 - `src/inbox/api.js`: destination inbox API (list, receipts, rejections).
 - `src/destinations.js`: the registry of destination apps (scopes, card support, sync, reference lists).
@@ -67,15 +67,19 @@ Node.js's experimental SQLite API runs the SQL migrations in an in-memory databa
 - `src/spotify/`: hourly Spotify listening sync for potcast (P3).
 - `src/server/auth.js`: secret-token roles; identity is never accepted from client JSON.
 - `src/server/store.js` + `migrations/`: D1 candidate storage with SQL uniqueness, append-only change feed, and the login throttle.
-- `docs/P1_PRIVATE_API.md`: setup and security restrictions.
-- `docs/ROADMAP.md`: next stages.
+- `test/`: Node's built-in test runner; each destination, the OAuth flow, cards, sync and board have their own file.
+- `scripts/render-wrangler-config.mjs` + `wrangler.example.jsonc`: render the ignored `wrangler.jsonc` from environment variables for CI deploys, so nothing account-specific is committed.
+- `.github/workflows/`: `check.yml` (`npm run check`) and `deploy.yml` (manual Cloudflare deploy).
+- `examples/food-candidates.json`: fictional candidates for trying the API.
+- `AGENTS.md`: the boundaries for AI coding sessions (no real records in this public repository; only the owner approves).
+- `docs/`: `ARCHITECTURE.md`, `ROADMAP.md`, `P1_PRIVATE_API.md` (setup and security restrictions) and one document per stage or destination (`P2`–`P7`).
 
 ```
 Claude/Codex --[MCP + OAuth]--> Life Hub D1 private inbox
                                                          |
                                    [PALATE pull + receipts, P2b]
                                                          v
-                                           food  (next: kyeokyeoi / potcast ...)
+                                           food, kyeokyeoi, potcast, ... (see Connected apps)
                                                          |
                                           [owner-approved destination receipt]
 ```
