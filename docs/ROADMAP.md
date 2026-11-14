@@ -8,6 +8,6 @@
 - **P4 — conversational convenience**: safe commands, status/replay visibility, optional scheduled daily Diaryroulette prompts and supported cross-app semantic links.
 - **P6 — device sync** (Hub side deployed, apps implemented): see `P6_SYNC.md`.
 - **P7 — board API** (Hub side B1–B5 deployed; all nine apps upload tiles): apps upload board tiles, the separate `board` site reads them, layout sync, approved Claude memos, roulette proposals. See `P7_BOARD.md`.
-- **P8 — chunked record storage** (not designed yet).
+- **P8 — chunks** (design proposed, not implemented): card-sized memory units the apps upload and Claude can read. See `P8_CHUNKS.md`.
 
 Critical non-goal: do not publish anyone's personal data in a public repo or static Pages build.
