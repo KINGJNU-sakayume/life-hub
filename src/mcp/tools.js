@@ -90,7 +90,7 @@ const trackSchema = {
   properties: {
     title: { type: 'string', minLength: 1, maxLength: 200 },
     spotify_track_id: { type: 'string', pattern: '^[A-Za-z0-9]{22}$', description: 'From spotify_track_uri "spotify:track:<id>".' },
-    status: { type: 'string', enum: ['listened', 'skipped'] },
+    status: { type: 'string', enum: ['listened'], description: 'Only tracks the user listened to are proposed; leave the others out.' },
     played_at: { type: 'string', description: 'ISO 8601 time of the play (the history file\'s "ts").' },
   },
 };
@@ -233,10 +233,10 @@ export const TOOLS = Object.freeze([
     title: 'Propose an album listening for potcast',
     description: 'Propose ONE album the user listened to on purpose (digging an artist, or sitting down to listen to an album), for review in potcast. ' +
       'Music that merely played in the background, on a playlist, radio or autoplay does not count. ' +
-      'origin=conversation: the user told you ("오늘 Blond 다 들었어") — use whole_album, or tracks with their status. ' +
+      'origin=conversation: the user told you ("오늘 Blond 다 들었어") — use whole_album, or list only the tracks they listened to. ' +
       'origin=spotify_history: the user gave you their Spotify Extended Streaming History (JSON). Analyse it with code, never by reading rows: use only ts, ms_played, spotify_track_uri, master_metadata_track_name, master_metadata_album_album_name, master_metadata_album_artist_name, reason_start, reason_end, shuffle, skipped, and ignore everything else (IP addresses, user agents, usernames). ' +
       'Treat as intentional only album sessions: several different tracks of the same album played close together with shuffle off. ' +
-      'A track is listened when reason_end is "trackdone", or it was not skipped and ms_played ≥ 120000; otherwise skipped. Keep one entry per track (latest play). ' +
+      'A track is listened when reason_end is "trackdone", or it was not skipped and ms_played ≥ 120000; leave every other track out (potcast has no "skipped" state). Keep one entry per track (latest play). ' +
       'Before proposing from history, list the candidate albums to the user in small batches (artist, album, date range, listened/total) and propose ONLY the albums they confirm. ' +
       pendingNote('potcast') + ' Identical proposals are de-duplicated.',
     inputSchema: albumSchema,
@@ -259,7 +259,7 @@ export const TOOLS = Object.freeze([
   {
     name: 'review_listening',
     title: 'Review listened albums for potcast',
-    description: 'Show ONE album listening waiting for review in potcast (albums Life Hub collected from Spotify every hour, or ones proposed earlier), when the user asks to check or review the albums they listened to. The owner checks each track (listened / skipped) and approves in the card or in potcast. Call again to show the next album. Never approve, reject or change tracks on the owner\'s behalf.',
+    description: 'Show ONE album listening waiting for review in potcast (albums Life Hub collected from Spotify every hour, or ones proposed earlier), when the user asks to check or review the albums they listened to. The owner checks which tracks they listened to and approves in the card or in potcast. Call again to show the next album. Never approve, reject or change tracks on the owner\'s behalf.',
     inputSchema: reviewSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -526,6 +526,17 @@ const acceptedScopes = (destination) => ['hub:propose', ...(destinationById(dest
 export class ToolInputError extends Error {}
 
 /** Strict argument parsing against a tool schema: unknown fields, wrong types and blanks are input errors. */
+/**
+ * potcast records only what was listened to. A "skipped" track from an older prompt or client is left out of
+ * the proposal (stored proposals that still carry one stay readable; potcast drops it too).
+ */
+function listenedOnly(payload) {
+  if (!Array.isArray(payload.tracks)) return payload;
+  const tracks = payload.tracks.filter((t) => t.status !== 'skipped');
+  if (tracks.length === 0) throw new ToolInputError('Only listened tracks can be proposed, and none of these were.');
+  return { ...payload, tracks };
+}
+
 function pick(args, schema) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) throw new ToolInputError('Arguments must be an object.');
   const allowed = Object.keys(schema.properties);
@@ -631,7 +642,7 @@ async function reviewListening(context, args) {
   const rec = wanted ? pending.find((r) => r.id === wanted) : pending[0];
   if (!rec) throw new ToolInputError('That album is not waiting for review (it may be decided already).');
   const p = finalEnvelope(rec).payload;
-  const listened = p.whole_album ? 'the whole album' : `${p.tracks.filter((t) => t.status === 'listened').length} listened, ${p.tracks.filter((t) => t.status === 'skipped').length} skipped`;
+  const listened = p.whole_album ? 'the whole album' : `${p.tracks.filter((t) => t.status === 'listened').length} track(s) listened`;
   const remaining = pending.length - 1;
   const from = rec.source === 'spotify' ? 'collected from Spotify' : 'proposed in a conversation';
   const text = `"${p.album}" by ${p.artist}${p.listened_on ? ` (${p.listened_on})` : ''}, ${from}: ${listened}. ` +
@@ -751,7 +762,7 @@ export async function callTool(name, args, context) {
     } else if (name === 'propose_food_wish') {
       outcome = await propose(context, 'food', 'wish', pick(args, wishSchema));
     } else if (name === 'propose_album_listening') {
-      outcome = await propose(context, 'potcast', 'album_listening', pick(args, albumSchema));
+      outcome = await propose(context, 'potcast', 'album_listening', listenedOnly(pick(args, albumSchema)));
     } else if (name === 'propose_activity_record') {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
     } else if (name === 'review_listening') {

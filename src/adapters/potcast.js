@@ -5,7 +5,7 @@
  * merely played. A candidate is one album the user confirmed they listened to on purpose:
  * - `origin: conversation` — the user said so ("오늘 Blond 다 들었어"): `whole_album` or named tracks.
  * - `origin: spotify_history` — derived from the user's Spotify streaming-history file, after the user
- *   confirmed this album in the conversation: per-track listened/skipped with play times.
+ *   confirmed this album in the conversation: the tracks that were listened to, with play times.
  * potcast resolves the album on Spotify, shows every track for review, and records nothing until the
  * owner approves. No IPs, user agents, usernames or raw history rows are accepted.
  * - `origin: spotify_sync` (source `spotify`) — collected by the hub every hour from the owner's Spotify
@@ -17,6 +17,10 @@ const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual', 'spotify']);
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 export const MAX_TRACKS = 80;
 
+/**
+ * `skipped` is no longer proposed (potcast has no such state) but is still valid here: proposals stored before
+ * the change must stay readable, and potcast drops such tracks when it reads them.
+ */
 function validTrack(t) {
   return isObject(t) && hasOnly(t, ['title', 'spotify_track_id', 'status', 'played_at']) &&
     (t.title !== undefined || t.spotify_track_id !== undefined) && optionalText(t.title, 200) &&

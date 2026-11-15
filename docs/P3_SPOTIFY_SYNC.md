@@ -6,8 +6,8 @@ Every hour the Worker's cron trigger reads the owner's Spotify **recently played
 
 - Only plays **started from the album itself** (the play's context is that album). Playlists, radio, artist pages, search results and autoplay never count — music that merely came up is not "digging".
 - Plays of one album with gaps of at most an hour form a session. A session is proposed once it is **closed** (last play more than two hours ago), so one listening session is never split across polls.
-- Sessions with fewer than 3 distinct tracks (or the whole album when it is shorter) are dropped as "just clicked in".
-- Per track: Spotify gives the time each play ended, not its length. The time since the previous play ended approximates it — **listened** when it is at least min(90 % of the track, 2 minutes), otherwise **skipped**. The first play of a session counts as listened (Spotify lists only plays of 30 s or more). The owner corrects anything in potcast.
+- Sessions with fewer than 3 **listened** tracks (or the whole album when it is shorter) are dropped as "just clicked in".
+- Per track: Spotify gives the time each play ended, not its length. The time since the previous play ended approximates it — **listened** when it is at least min(90 % of the track, 2 minutes), otherwise it was skipped past and is left out of the proposal (potcast has no skipped state). The first play of a session counts as listened (Spotify lists only plays of 30 s or more). The owner corrects anything in potcast.
 
 ## Candidate
 
