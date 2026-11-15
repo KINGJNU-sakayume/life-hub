@@ -38,9 +38,9 @@ test('only plays started from the album itself count', () => {
   assert.deepEqual(Object.keys(plays[0]).sort(), ['album_id', 'album_name', 'album_tracks', 'artist_name', 'duration_ms', 'played_at', 'track_id', 'track_name']);
 });
 
-test('sessions: closed ones become candidates with listened/skipped, open ones wait, clicks are dropped', () => {
+test('sessions: closed ones become candidates with only the listened tracks, open ones wait, clicks are dropped', () => {
   const plays = albumPlays([
-    // Album A: 4 tracks; the third ended 40 s after the second → skipped.
+    // Album A: 4 tracks; the third ended 40 s after the second → skipped past, so it is left out.
     item(T(0), ALBUM, at(0)), item(T(1), ALBUM, at(4)), item(T(2), ALBUM, at(4.67)), item(T(3), ALBUM, at(8)),
     // Album B: only two tracks → just clicked in.
     item(T(4), OTHER, at(20), undefined), item(T(5), OTHER, at(24)),
@@ -52,7 +52,8 @@ test('sessions: closed ones become candidates with listened/skipped, open ones w
   assert.equal(c.idempotency_key, `spsync-${ALBUM}-${Date.parse(at(0))}`);
   assert.equal(c.payload.origin, 'spotify_sync');
   assert.equal(c.payload.listened_on, kstDay(Date.parse(at(0))));
-  assert.deepEqual(c.payload.tracks.map((t) => t.status), ['listened', 'listened', 'skipped', 'listened']);
+  assert.deepEqual(c.payload.tracks.map((t) => t.status), ['listened', 'listened', 'listened']);
+  assert.deepEqual(c.payload.tracks.map((t) => t.spotify_track_id), [T(0), T(1), T(3)]);
   assert.equal(consumed.length, 6);
   assert.equal(keep.length, 0);
   assert.ok(toPotcastCandidate({ hub_version: 1, destination: 'potcast', source: 'spotify', source_ref: 'spotify-sync:x',
@@ -67,6 +68,14 @@ test('sessions: closed ones become candidates with listened/skipped, open ones w
   const split = buildSessions(albumPlays([item(T(0), ALBUM, at(0)), item(T(1), ALBUM, at(4)), item(T(2), ALBUM, at(8)),
     item(T(3), ALBUM, at(200)), item(T(4), ALBUM, at(204)), item(T(5), ALBUM, at(208))]), Date.parse(at(208)) + 3 * 3600_000);
   assert.equal(split.candidates.length, 2);
+});
+
+test('sessions: skipping past most of an album proposes nothing (fewer than three listened tracks)', () => {
+  // Four tracks each ended under 40 s after the previous one: only the first counts as listened.
+  const plays = albumPlays([item(T(0), ALBUM, at(0)), item(T(1), ALBUM, at(0.5)), item(T(2), ALBUM, at(1)), item(T(3), ALBUM, at(1.5))]);
+  const { candidates, consumed } = buildSessions(plays, Date.parse(at(1.5)) + 3 * 3600_000);
+  assert.equal(candidates.length, 0);
+  assert.equal(consumed.length, 4, 'the closed session is still consumed');
 });
 
 test('the refresh token is sealed with its own key', async () => {

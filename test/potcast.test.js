@@ -37,6 +37,21 @@ test('album_listening accepts a whole album from conversation or per-track resul
   assert.throws(() => toPotcastCandidate(hub({ artist: 'x', album: 'y', origin: 'conversation', whole_album: true }, { candidate_type: 'track' })));
 });
 
+test('propose_album_listening proposes only listened tracks: a skipped one is left out, nothing listened is refused', async () => {
+  const db = new TestD1();
+  try {
+    const mixed = { artist: 'Synthetic Artist', album: 'Synthetic Album', origin: 'conversation',
+      tracks: [{ spotify_track_id: ID('a'), title: 'One', status: 'listened' }, { spotify_track_id: ID('b'), title: 'Two', status: 'skipped' }] };
+    const ok = await callTool('propose_album_listening', mixed, ctx(db));
+    assert.equal(ok.isError, undefined, JSON.stringify(ok));
+    const row = await db.prepare('SELECT envelope_json FROM inbox').bind().first();
+    assert.deepEqual(JSON.parse(row.envelope_json).payload.tracks, [{ spotify_track_id: ID('a'), title: 'One', status: 'listened' }]);
+    const none = await callTool('propose_album_listening', { ...mixed, album: 'Other', tracks: [{ title: 'Two', status: 'skipped' }] }, ctx(db));
+    assert.equal(none.isError, true);
+    assert.match(none.content[0].text, /listened/);
+  } finally { db.close(); }
+});
+
 test('propose_album_listening stores a pending potcast candidate; hub:propose covers it, old grants are asked to reconnect', async () => {
   const db = new TestD1();
   try {
@@ -115,11 +130,11 @@ test('review_listening shows one pending album as a card (Spotify-collected firs
     assert.equal(r.structuredContent.candidate_id, older.id, 'Spotify-collected and oldest first');
     assert.equal(r.structuredContent.remaining, 2);
     assert.equal(r.structuredContent.card.label, '앨범 감상');
-    assert.match(r.content[0].text, /Imaginary Album.*1 listened, 1 skipped/);
+    assert.match(r.content[0].text, /Imaginary Album.*1 track\(s\) listened/);
     const ticket = r._meta['life-hub/card'].ticket;
     assert.ok(!JSON.stringify(r.content).includes(ticket) && !JSON.stringify(r.structuredContent).includes(ticket));
 
-    // The owner marks the skipped track as listened in the card, then approves.
+    // This stored proposal still carries a legacy "skipped" track; it stays readable and the owner can turn it into a listened one.
     const payload = structuredClone(r.structuredContent.card.payload);
     payload.tracks[1].status = 'listened';
     const edited = await callTool('card_edit', { candidate_id: older.id, ticket, revision: 0, payload }, claude);

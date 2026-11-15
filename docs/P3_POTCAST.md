@@ -11,13 +11,13 @@ Third destination. One candidate = one album the user listened to **on purpose**
 | `origin` | `conversation` (the user said it) or `spotify_history` (from their Spotify streaming-history file, after they confirmed the album) |
 | `listened_on`? | YYYY-MM-DD |
 | `whole_album: true` **or** `tracks[]` | exactly one; history always has tracks |
-| `tracks[]` (≤80) | `{ title?, spotify_track_id?, status: listened\|skipped, played_at? }`, title or id required, ids unique |
+| `tracks[]` (≤80) | `{ title?, spotify_track_id?, status: listened, played_at? }` — only tracks that were listened to; title or id required, ids unique. Older proposals may still carry `status: skipped`: it stays valid to read, the `propose_album_listening` tool leaves such tracks out, and potcast drops them (it has no skipped state) |
 
 No IPs, user agents, usernames or raw history rows are accepted.
 
 ## Claude tool `propose_album_listening`
 
-For a history file Claude must analyse it with code, use only the listed fields, keep album sessions (several tracks of one album close together, shuffle off), mark a track listened when `reason_end` is `trackdone` or it was not skipped and `ms_played ≥ 120000`, list candidate albums to the user in small batches, and propose only the confirmed ones. potcast then shows each album's tracks for a final review.
+For a history file Claude must analyse it with code, use only the listed fields, keep album sessions (several tracks of one album close together, shuffle off), list a track only when `reason_end` is `trackdone` or it was not skipped and `ms_played ≥ 120000` (every other track is left out), list candidate albums to the user in small batches, and propose only the confirmed ones. potcast then shows each album's tracks for a final review.
 
 ## Scopes
 
@@ -29,8 +29,8 @@ Migration `0005` drops the destination CHECK (adapters validate every insert), s
 
 ## Card and review_listening (cards stage 7)
 
-- The potcast card shows one album (title, artist, day, where it came from) and every proposed track with 들음 /
-  건너뜀; 「수정」 changes track statuses and the note only (album, artist, Spotify IDs and play times stay).
+- The potcast card shows one album (title, artist, day, where it came from) and the tracks that were listened to;
+  「수정」 can switch a track off (at least one stays) and change the note only (album, artist, Spotify IDs and play times stay).
 - **`review_listening`** (`{ candidate_id? }`): albums the hourly Spotify collection proposes never pass through a
   conversation, so this tool shows one pending album at a time as that card — Spotify-collected first, oldest first —
   with how many more are waiting. It only reads (plus the card's ticket). ChatGPT/Codex get the text.

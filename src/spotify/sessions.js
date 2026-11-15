@@ -12,9 +12,10 @@
  *
  * Track status: Spotify reports when each play happened (`played_at`, the end of playback) but not how
  * long it lasted. The time since the previous play ended approximates it: a track counts as listened
- * when that time is at least min(90% of its length, 2 minutes); otherwise skipped. The first play of a
- * session has no previous play and counts as listened (Spotify only lists plays of 30 s or more).
- * The owner reviews every track in potcast before anything is recorded.
+ * when that time is at least min(90% of its length, 2 minutes); otherwise it was skipped past. The first play
+ * of a session has no previous play and counts as listened (Spotify only lists plays of 30 s or more).
+ * Only listened tracks are proposed — potcast has no "skipped" state — and a session needs at least
+ * MIN_TRACKS listened tracks. The owner reviews every track in potcast before anything is recorded.
  */
 export const SESSION_GAP_MS = 60 * 60 * 1000;
 export const CLOSE_AFTER_MS = 2 * 60 * 60 * 1000;
@@ -89,10 +90,8 @@ export function buildSessions(plays, nowMs) {
 
 function toCandidate(session) {
   const first = session[0];
-  const distinct = new Set(session.map((p) => p.track_id));
   const albumTracks = first.album_tracks ?? MIN_TRACKS;
-  if (distinct.size < Math.min(MIN_TRACKS, Math.max(1, albumTracks))) return null;
-  // Latest play per track; a listened play beats a skipped one.
+  // Latest play per track; a listened play beats a skipped-past one.
   const tracks = new Map();
   session.forEach((p, i) => {
     const prev = session[i - 1];
@@ -101,6 +100,8 @@ function toCandidate(session) {
     const listened = status === 'listened' || tracks.get(p.track_id)?.status === 'listened';
     tracks.set(p.track_id, { title: p.track_name, spotify_track_id: p.track_id, status: listened ? 'listened' : 'skipped', played_at: p.played_at });
   });
+  const heard = [...tracks.values()].filter((t) => t.status === 'listened');
+  if (heard.length < Math.min(MIN_TRACKS, Math.max(1, albumTracks))) return null;
   const startMs = Date.parse(first.played_at);
   return {
     idempotency_key: `spsync-${first.album_id}-${startMs}`,
@@ -110,7 +111,7 @@ function toCandidate(session) {
       spotify_album_id: first.album_id,
       origin: 'spotify_sync',
       listened_on: kstDay(startMs),
-      tracks: [...tracks.values()].slice(0, MAX_TRACKS),
+      tracks: heard.slice(0, MAX_TRACKS),
     },
   };
 }
