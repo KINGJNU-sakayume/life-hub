@@ -5,7 +5,7 @@
  * client, so a client cannot ask for another profile's scope or resource. Every profile receives
  * exactly its own scopes, for exactly its own resource.
  */
-import { DESTINATIONS, redirectUriFor, boardScope, BOARD_READ_SCOPE } from '../destinations.js';
+import { DESTINATIONS, redirectUriFor, boardScope, BOARD_READ_SCOPE, isLoopbackAppUrl, localRedirectUriFor } from '../destinations.js';
 
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 /** ChatGPT uses this stable callback when OAuth issuer identification is supported. */
@@ -34,6 +34,14 @@ export function isCodexCallback(value) {
 }
 
 export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexCallback(uri) || isChatgptCallback(uri);
+/** A destination app's local-copy callback configured on this deployment (`localRedirectVar`). */
+export const isConfiguredLocalCallback = (env, uri) => DESTINATIONS.some((d) => localRedirectUriFor(env, d) === uri);
+/**
+ * What DCR may register, judged without env by the OAuth library's callback: an MCP callback, or a loopback app
+ * callback. The worker's fetch handler first narrows the loopback case to exactly a configured local callback
+ * (isConfiguredLocalCallback), and only that exact callback ever gets a profile (clientProfiles).
+ */
+export const isAllowedRegistrationCallback = (uri) => isAllowedMcpCallback(uri) || isLoopbackAppUrl(uri);
 
 export const SCOPES = Object.freeze({
   /** One scope for every conversational proposal tool, so new destinations need no reconnect. */
@@ -98,6 +106,8 @@ export function clientProfiles(env) {
   for (const d of DESTINATIONS) {
     const redirectUri = redirectUriFor(env, d);
     if (redirectUri) profiles.push(destinationProfile(d, redirectUri));
+    const localUri = localRedirectUriFor(env, d);
+    if (localUri) profiles.push(destinationProfile(d, localUri));
   }
   return profiles;
 }

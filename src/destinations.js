@@ -54,6 +54,10 @@ export const DESTINATIONS = Object.freeze([
   {
     id: 'potcast', app: 'potcast', role: 'potcast', path: '/potcast', scope: 'potcast:inbox',
     redirectVar: 'HUB_POTCAST_REDIRECT_URI', types: ['album_listening'], adapter: toPotcastCandidate, label: 'potcast',
+    // Optional: the same app run on the owner's computer (arcplayer, `npm run dev`), e.g. http://127.0.0.1:5173/lifehub/.
+    // It registers itself by DCR for that loopback callback (RFC 8252) and gets the same profile; the consent page
+    // warns that the grant goes to this computer.
+    localRedirectVar: 'HUB_POTCAST_LOCAL_REDIRECT_URI',
     // Album card (track by track); the app records `approved` albums since its stage-7 release.
     card: { approve: true },
     grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, potcast에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
@@ -142,6 +146,17 @@ const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
 export function redirectUriFor(env, destination) {
   const value = env[destination.redirectVar];
   return typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300 ? value : null;
+}
+
+const LOOPBACK_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/;
+/** An app callback on this computer: numeric IPv4 loopback, explicit port, a plain path (no query, fragment or dot segments). */
+export function isLoopbackAppUrl(value) {
+  return typeof value === 'string' && value.length <= 300 && LOOPBACK_URL.test(value) && !/\/\.\.?(?:\/|$)/.test(value);
+}
+/** A destination app's local-copy callback from deploy config (`localRedirectVar`); null when unset or malformed. */
+export function localRedirectUriFor(env, destination) {
+  const value = destination.localRedirectVar ? env[destination.localRedirectVar] : undefined;
+  return isLoopbackAppUrl(value) ? value : null;
 }
 
 /** The app's public start page for card links: the redirect URI's origin + first path segment. */

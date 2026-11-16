@@ -16,6 +16,8 @@
     "HUB_KYEOKYEOI_REDIRECT_URI": "REPLACE_WITH_YOUR_KYEOKYEOI_REDIRECT_URI",
     // Optional: potcast's Life Hub callback page URL. Empty disables the potcast inbox API.
     "HUB_POTCAST_REDIRECT_URI": "REPLACE_WITH_YOUR_POTCAST_REDIRECT_URI",
+    // Optional: the Life Hub callback of potcast run on your computer (http://127.0.0.1:<port>/lifehub/). Empty disables it.
+    "HUB_POTCAST_LOCAL_REDIRECT_URI": "REPLACE_WITH_YOUR_POTCAST_LOCAL_REDIRECT_URI",
     // Optional: 업적 라이브러리's Life Hub callback page URL. Empty disables its inbox API.
     "HUB_ACHIEVEMENT_REDIRECT_URI": "REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI",
     // Optional: 책장 (letterbookxd)'s Life Hub callback page URL. Empty disables its inbox API.

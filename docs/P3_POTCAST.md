@@ -43,3 +43,9 @@ Migration `0005` drops the destination CHECK (adapters validate every insert), s
 1. Variable `HUB_POTCAST_REDIRECT_URI` = `https://<user>.github.io/potcast/lifehub/` (potcast's Life Hub callback page; the app root is taken by its Spotify sign-in).
 2. Merge → **Deploy (Cloudflare)** (applies `0005`).
 3. Reconnect the Claude connector once (now `hub:propose`).
+
+**Running potcast on your computer** (arcplayer, `npm run dev` at `http://127.0.0.1:5173`): set the variable
+`HUB_POTCAST_LOCAL_REDIRECT_URI` = `http://127.0.0.1:5173/lifehub/` and deploy. The local app has no public client
+document, so it registers itself once by DCR for exactly that loopback callback (any other callback is refused) and
+gets potcast's own profile and scopes; the consent page asks for the owner password and warns that the grant goes to
+this computer. It works with or without `HUB_POTCAST_REDIRECT_URI`.

@@ -21,8 +21,8 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
-import { isAllowedMcpCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
-import { DESTINATIONS, redirectUriFor, appUrlFor, boardScope } from '../destinations.js';
+import { isAllowedMcpCallback, isAllowedRegistrationCallback, isConfiguredLocalCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
+import { DESTINATIONS, redirectUriFor, localRedirectUriFor, appUrlFor, boardScope } from '../destinations.js';
 import { handleManifestRequest, handleBoardRequest } from '../board/api.js';
 import { handleBoardProposal } from '../board/proposals.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
@@ -140,12 +140,12 @@ export function createServers(origin) {
     // DCR registrations never expire either (same section, "Client registration"); omitting the key keeps the
     // library's 90-day default. Records written under that default keep their stored KV expiry.
     clientRegistrationTTL: undefined,
-    // DCR accepts one approved callback per client. Never permit mixed MCP client callbacks.
-    // Destination apps use their own CIMD documents, not DCR.
+    // DCR accepts one approved callback per client. Never permit mixed client callbacks.
+    // Destination apps use their own CIMD documents, not DCR, except a local copy on a loopback callback.
     clientRegistrationCallback: ({ clientMetadata }) => {
       const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
-      if (uris.length !== 1 || !isAllowedMcpCallback(uris[0]))
-        return { code: 'invalid_redirect_uri', description: 'Only approved Claude, Codex or ChatGPT callbacks may register', status: 400 };
+      if (uris.length !== 1 || !isAllowedRegistrationCallback(uris[0]))
+        return { code: 'invalid_redirect_uri', description: 'Only approved Claude, Codex, ChatGPT or local app callbacks may register', status: 400 };
     },
     onError: ({ status, code }) => { if (status >= 500) console.warn('oauth error', status, code); },
   });
@@ -165,6 +165,20 @@ export function createServers(origin) {
 }
 
 const under = (path, base) => path === base || path.startsWith(base + '/');
+
+/**
+ * DCR for a non-MCP callback: only a destination app's local-copy callback configured on this deployment. The OAuth
+ * library's registration callback has no env, so the deployment-specific part is checked here first. Anything that
+ * is not a well-formed single-callback registration is left to the library, which refuses it on its own.
+ */
+async function refuseUnconfiguredLocalRegistration(request, env) {
+  if (request.method !== 'POST') return null;
+  let uris;
+  try { uris = (await request.clone().json())?.redirect_uris; } catch { return null; }
+  if (!Array.isArray(uris) || uris.length !== 1 || isAllowedMcpCallback(uris[0]) || isConfiguredLocalCallback(env, uris[0])) return null;
+  return new Response(JSON.stringify({ error: 'invalid_redirect_uri', error_description: 'Only approved Claude, Codex, ChatGPT or configured local app callbacks may register' }),
+    { status: 400, headers: JSON_HEADERS });
+}
 const servers = new Map();
 
 export default {
@@ -181,13 +195,17 @@ export default {
       return s.mcp.fetch(request, env, ctx);
     for (const d of DESTINATIONS) {
       if (under(path, d.path) || under(path, '/.well-known/oauth-protected-resource' + d.path)) {
-        if (!redirectUriFor(env, d)) return notConfigured();
+        if (!redirectUriFor(env, d) && !localRedirectUriFor(env, d)) return notConfigured();
         return s.inboxes.get(d.id).fetch(request, env, ctx);
       }
     }
     if (path === '/spotify' || path.startsWith('/spotify/')) return handleSpotify(request, env);
     if (path === '/authorize')
       return handleAuthorize(request, env, s.authorizationServer.getOAuthApi(env), { AuthorizationError, CimdFetchError });
+    if (path === '/oauth/register') {
+      const refused = await refuseUnconfiguredLocalRegistration(request, env);
+      if (refused) return refused;
+    }
     if (path.startsWith('/oauth/') || path.startsWith('/.well-known/'))
       return s.authorizationServer.fetch(request, env, ctx);
     return handleRequest(request, env);

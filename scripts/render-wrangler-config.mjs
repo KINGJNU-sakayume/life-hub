@@ -47,6 +47,12 @@ export const FIELDS = Object.freeze([
     hint: 'empty, or potcast\'s Life Hub callback URL such as https://<user>.github.io/potcast/lifehub/ (no query or fragment)',
   },
   {
+    env: 'HUB_POTCAST_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_POTCAST_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of potcast run on your computer, such as http://127.0.0.1:5173/lifehub/',
+  },
+  {
     env: 'HUB_ACHIEVEMENT_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI', optional: true,
     valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
