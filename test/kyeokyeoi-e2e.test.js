@@ -11,6 +11,8 @@ globalThis.Cloudflare = { compatibilityFlags: { global_fetch_strictly_public: tr
 const APPS = {
   kyeokyeoi: { url: 'https://owner.github.io/kyeokyeoi/', name: '켜켜이', scope: 'kyeokyeoi:inbox', path: '/kyeokyeoi' },
   palate: { url: 'https://owner.github.io/food/', name: 'PALATE', scope: 'food:inbox', path: '/palate' },
+  music: { url: 'https://owner.github.io/music/lifehub/', name: 'music', scope: 'music:inbox music:board', path: '/music' },
+  // The same app before its rename (old client id, callback, resource and scopes): kept working as an alias.
   potcast: { url: 'https://owner.github.io/potcast/lifehub/', name: 'potcast', scope: 'potcast:inbox', path: '/potcast' },
   achievement: { url: 'https://owner.github.io/achievement/lifehub/', name: '업적 라이브러리', scope: 'achievement:inbox', path: '/achievement' },
   letterbookxd: { url: 'https://owner.github.io/letterbookxd/lifehub/', name: '책장', scope: 'letterbookxd:inbox', path: '/letterbookxd' },
@@ -33,7 +35,8 @@ const ORIGIN = 'https://hub.example';
 const PASSWORD = 'synthetic-owner-password-' + 'k'.repeat(24);
 const makeEnv = (patch = {}) => ({
   DB: new TestD1(), OAUTH_KV: new TestKV(), HUB_PUBLIC_ORIGIN: ORIGIN,
-  HUB_PALATE_REDIRECT_URI: APPS.palate.url, HUB_KYEOKYEOI_REDIRECT_URI: APPS.kyeokyeoi.url, HUB_POTCAST_REDIRECT_URI: APPS.potcast.url,
+  HUB_PALATE_REDIRECT_URI: APPS.palate.url, HUB_KYEOKYEOI_REDIRECT_URI: APPS.kyeokyeoi.url,
+  HUB_MUSIC_REDIRECT_URI: APPS.music.url, HUB_POTCAST_REDIRECT_URI: APPS.potcast.url,
   HUB_ACHIEVEMENT_REDIRECT_URI: APPS.achievement.url,
   HUB_LETTERBOOKXD_REDIRECT_URI: APPS.letterbookxd.url,
   HUB_SUB_REDIRECT_URI: APPS.sub.url,
@@ -132,7 +135,67 @@ test('without HUB_KYEOKYEOI_REDIRECT_URI the 켜켜이 profile and API are off',
   } finally { env.DB.close(); }
 });
 
-test('potcast connects via its callback page and receives album_listening candidates only', async () => {
+test('music connects with its client document (/music/lifehub-client.json) and receives album_listening candidates only', async () => {
+  const env = makeEnv();
+  try {
+    await seed(env);
+    const at = '2026-11-02T01:00:00Z';
+    await insertCandidate(env.DB, 'demo-owner', { hub_version: 1, source: 'claude', source_ref: 'claude-mcp:2026-11-02', created_at: at,
+      destination: 'music', idempotency_key: 'mcp-' + 'q'.repeat(40), candidate_type: 'album_listening',
+      payload: { artist: 'Synthetic Artist', album: 'Synthetic Album', origin: 'conversation', whole_album: true } }, at);
+    assert.equal(clientId(APPS.music), 'https://owner.github.io/music/lifehub-client.json');
+    const prm = await (await call(env, '/.well-known/oauth-protected-resource/music')).json();
+    assert.equal(prm.resource, ORIGIN + '/music');
+    const { html, token } = await connect(env, APPS.music);
+    assert.match(html, /music:inbox/);
+    assert.equal(token.scope, 'music:inbox music:board', 'new grants use the music scopes');
+    const t = token.access_token;
+    const { candidates } = await (await api(env, t, '/music/v1/candidates')).json();
+    assert.deepEqual(candidates.map((c) => c.candidate.candidate_type), ['album_listening']);
+    const key = candidates[0].key;
+    assert.equal((await api(env, t, '/music/v1/receipts', 'POST', { key, entity_type: 'memory', entity_id: 'x' })).status, 400);
+    assert.equal((await api(env, t, '/music/v1/receipts', 'POST', { key, entity_type: 'album_listening', entity_id: 'A'.repeat(22) })).status, 200);
+    assert.equal((await api(env, t, '/kyeokyeoi/v1/candidates')).status, 401);
+    // Board tiles go to /music/v1/board with music:board.
+    const manifest = { version: 1, app: 'music', generated_at: new Date(Date.now() - 60000).toISOString(), tiles: [{ id: 'now', tone: 'type' }] };
+    assert.equal((await api(env, t, '/music/v1/board', 'PUT', manifest)).status, 200);
+    assert.equal((await env.DB.prepare('SELECT app FROM board_manifests').bind().first()).app, 'music');
+  } finally { env.DB.close(); }
+});
+
+test('rename alias: /potcast/v1 serves the music handler, and old and new tokens work on both paths', async () => {
+  const env = makeEnv();
+  try {
+    const old = await connect(env, APPS.potcast);
+    const fresh = await connect(env, APPS.music);
+    const tiles = (app, minutesAgo) => ({ version: 1, app, generated_at: new Date(Date.now() - minutesAgo * 60000).toISOString(), tiles: [{ id: 'now', tone: 'type' }] });
+    // The app before its update: old resource and scopes, on its old path, naming itself potcast.
+    assert.equal(old.token.scope, 'potcast:inbox potcast:board', 'an old client asking for the old resource gets the old spellings');
+    assert.equal((await api(env, old.token.access_token, '/potcast/v1/candidates')).status, 200);
+    // The board scope of the old spelling is accepted on both paths.
+    const oldBoard = old;
+    assert.equal((await api(env, oldBoard.token.access_token, '/potcast/v1/board', 'PUT', tiles('potcast', 10))).status, 200);
+    assert.equal((await api(env, oldBoard.token.access_token, '/music/v1/board', 'PUT', tiles('potcast', 9))).status, 200);
+    // Stored once, under the new name, whatever path or name it came with.
+    assert.deepEqual((await env.DB.prepare('SELECT app FROM board_manifests').bind().all()).results.map((r) => r.app), ['music']);
+    // The updated app's music token works on the alias path too (deploy order does not matter).
+    assert.equal((await api(env, fresh.token.access_token, '/potcast/v1/candidates')).status, 200);
+    assert.equal((await api(env, fresh.token.access_token, '/potcast/v1/board', 'PUT', tiles('music', 8))).status, 200);
+    const got = await (await api(env, fresh.token.access_token, '/music/v1/board')).json();
+    assert.equal(got.manifest.app, 'music');
+    // The old grant refreshes with its old resource and scopes.
+    const refreshed = await (await call(env, '/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: oldBoard.token.refresh_token, client_id: clientId(APPS.potcast) }) })).json();
+    assert.equal(refreshed.scope, 'potcast:inbox potcast:board');
+    assert.equal((await api(env, refreshed.access_token, '/music/v1/candidates')).status, 200);
+    // Other apps' tokens are not music tokens on either path.
+    const palate = await connect(env, APPS.palate);
+    for (const path of ['/music/v1/candidates', '/potcast/v1/candidates'])
+      assert.equal((await api(env, palate.token.access_token, path)).status, 401, path);
+  } finally { env.DB.close(); }
+});
+
+test('legacy: potcast (old callback page and resource) connects and receives album_listening candidates only', async () => {
   const env = makeEnv();
   try {
     await seed(env);
@@ -169,7 +232,7 @@ test('업적 라이브러리 connects via its callback page and receives activit
     const key = candidates[0].key;
     assert.equal((await api(env, t, '/achievement/v1/receipts', 'POST', { key, entity_type: 'album_listening', entity_id: 'x' })).status, 400);
     assert.equal((await api(env, t, '/achievement/v1/receipts', 'POST', { key, entity_type: 'activity_record', entity_id: 'lh_rec_1' })).status, 200);
-    assert.equal((await api(env, t, '/potcast/v1/candidates')).status, 401);
+    assert.equal((await api(env, t, '/music/v1/candidates')).status, 401);
     // Off without its redirect variable.
     const off = makeEnv({ HUB_ACHIEVEMENT_REDIRECT_URI: '' });
     try { assert.equal((await call(off, '/achievement/v1/candidates')).status, 503); } finally { off.DB.close(); }

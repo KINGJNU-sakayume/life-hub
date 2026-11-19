@@ -49,3 +49,17 @@ test('rejects missing, malformed or injected values', () => {
 test('refuses an example without exactly one placeholder each', () => {
   assert.throws(() => renderWranglerConfig('{}', good), /placeholder/);
 });
+
+test('HUB_MUSIC_* are rendered, fall back to the legacy HUB_POTCAST_* names, and the legacy names are still rendered', () => {
+  const NEW = 'https://someone.github.io/music/lifehub/';
+  const OLD = 'https://someone.github.io/potcast/lifehub/';
+  const LOCAL = 'http://127.0.0.1:5173/lifehub/';
+  const both = renderWranglerConfig(example, { ...good, HUB_MUSIC_REDIRECT_URI: NEW, HUB_POTCAST_REDIRECT_URI: OLD });
+  assert.ok(both.includes(`"HUB_MUSIC_REDIRECT_URI": "${NEW}"`) && both.includes(`"HUB_POTCAST_REDIRECT_URI": "${OLD}"`));
+  const legacyOnly = renderWranglerConfig(example, { ...good, HUB_POTCAST_REDIRECT_URI: OLD, HUB_POTCAST_LOCAL_REDIRECT_URI: LOCAL, HUB_MUSIC_REDIRECT_URI: '' });
+  assert.ok(legacyOnly.includes(`"HUB_MUSIC_REDIRECT_URI": "${OLD}"`), 'the old variable is the fallback');
+  assert.ok(legacyOnly.includes(`"HUB_MUSIC_LOCAL_REDIRECT_URI": "${LOCAL}"`));
+  assert.ok(renderWranglerConfig(example, good).includes('"HUB_MUSIC_REDIRECT_URI": ""'));
+  assert.throws(() => renderWranglerConfig(example, { ...good, HUB_MUSIC_REDIRECT_URI: 'http://x.io/' }), /HUB_MUSIC_REDIRECT_URI/);
+  assert.throws(() => renderWranglerConfig(example, { ...good, HUB_POTCAST_REDIRECT_URI: 'http://x.io/' }), /HUB_MUSIC_REDIRECT_URI/, 'a bad fallback is refused too');
+});

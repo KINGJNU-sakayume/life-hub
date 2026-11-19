@@ -5,7 +5,7 @@ import { albumPlays, buildSessions, kstDay } from '../src/spotify/sessions.js';
 import { sealToken, openToken } from '../src/spotify/crypto.js';
 import { linkSpotify, pollSpotify } from '../src/spotify/sync.js';
 import { handleSpotify } from '../src/spotify/routes.js';
-import { toPotcastCandidate } from '../src/adapters/potcast.js';
+import { toMusicCandidate } from '../src/adapters/music.js';
 
 // Synthetic data only: invented IDs, titles and times.
 const ID = (c) => c.repeat(22);
@@ -56,7 +56,7 @@ test('sessions: closed ones become candidates with only the listened tracks, ope
   assert.deepEqual(c.payload.tracks.map((t) => t.spotify_track_id), [T(0), T(1), T(3)]);
   assert.equal(consumed.length, 6);
   assert.equal(keep.length, 0);
-  assert.ok(toPotcastCandidate({ hub_version: 1, destination: 'potcast', source: 'spotify', source_ref: 'spotify-sync:x',
+  assert.ok(toMusicCandidate({ hub_version: 1, destination: 'music', source: 'spotify', source_ref: 'spotify-sync:x',
     idempotency_key: c.idempotency_key, created_at: at(0), candidate_type: 'album_listening', payload: c.payload }));
 
   // The same plays one hour later are still an open session: nothing proposed, nothing deleted.
@@ -104,7 +104,7 @@ function spotifyFake(items, { revoke = false } = {}) {
   return { calls, fetchFn };
 }
 
-test('hourly poll: album sessions become pending potcast candidates, plays are deleted, the cursor moves', async () => {
+test('hourly poll: album sessions become pending music candidates, plays are deleted, the cursor moves', async () => {
   const e = env();
   try {
     const items = [item(T(0), ALBUM, at(0)), item(T(1), ALBUM, at(4)), item(T(2), ALBUM, at(8)), item(T(6), OTHER, at(9), { type: 'playlist', uri: 'spotify:playlist:x' })];
@@ -125,7 +125,7 @@ test('hourly poll: album sessions become pending potcast candidates, plays are d
     r = await pollSpotify(e, fetchFn, Date.parse(at(8)) + 3 * 3600_000);
     assert.equal(r.proposed, 1);
     const row = await e.DB.prepare('SELECT destination, source, status, envelope_json FROM inbox').bind().first();
-    assert.deepEqual([row.destination, row.source, row.status], ['potcast', 'spotify', 'pending']);
+    assert.deepEqual([row.destination, row.source, row.status], ['music', 'spotify', 'pending']);
     assert.equal(JSON.parse(row.envelope_json).payload.tracks.length, 3);
     assert.equal((await e.DB.prepare('SELECT COUNT(*) AS n FROM spotify_plays').bind().first()).n, 0);
     assert.match(calls.filter((c) => c.url.includes('recently-played')).at(-1).url, new RegExp(`after=${Date.parse(at(9))}`));
@@ -186,11 +186,11 @@ test('owner pages: password gate, PKCE redirect with state, callback links once'
 });
 
 test('the spotify source is only for the hub\'s own collection', () => {
-  const base = { hub_version: 1, destination: 'potcast', source_ref: 'x:y', idempotency_key: 'spsync-' + 'a'.repeat(30), created_at: at(0), candidate_type: 'album_listening' };
+  const base = { hub_version: 1, destination: 'music', source_ref: 'x:y', idempotency_key: 'spsync-' + 'a'.repeat(30), created_at: at(0), candidate_type: 'album_listening' };
   const sync = { artist: 'x', album: 'y', origin: 'spotify_sync', spotify_album_id: ALBUM, tracks: [{ spotify_track_id: T(0), status: 'listened', played_at: at(0) }] };
-  assert.ok(toPotcastCandidate({ ...base, source: 'spotify', payload: sync }));
-  assert.throws(() => toPotcastCandidate({ ...base, source: 'claude', payload: sync }));
-  assert.throws(() => toPotcastCandidate({ ...base, source: 'spotify', payload: { artist: 'x', album: 'y', origin: 'conversation', whole_album: true } }));
-  assert.throws(() => toPotcastCandidate({ ...base, source: 'spotify', payload: { ...sync, spotify_album_id: undefined } }));
-  assert.throws(() => toPotcastCandidate({ ...base, source: 'spotify', payload: { ...sync, tracks: [{ title: 'a', status: 'listened' }] } }));
+  assert.ok(toMusicCandidate({ ...base, source: 'spotify', payload: sync }));
+  assert.throws(() => toMusicCandidate({ ...base, source: 'claude', payload: sync }));
+  assert.throws(() => toMusicCandidate({ ...base, source: 'spotify', payload: { artist: 'x', album: 'y', origin: 'conversation', whole_album: true } }));
+  assert.throws(() => toMusicCandidate({ ...base, source: 'spotify', payload: { ...sync, spotify_album_id: undefined } }));
+  assert.throws(() => toMusicCandidate({ ...base, source: 'spotify', payload: { ...sync, tracks: [{ title: 'a', status: 'listened' }] } }));
 });

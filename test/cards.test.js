@@ -79,7 +79,7 @@ test('resources: every card is a small self-contained mcp-app page with no exter
       ['ui://life-hub/card-diaryroulette.html', 'text/html;profile=mcp-app'], ['ui://life-hub/card-achievement.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-sub.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-animan.html', 'text/html;profile=mcp-app'],
-      ['ui://life-hub/card-potcast.html', 'text/html;profile=mcp-app'],
+      ['ui://life-hub/card-music.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-letterbookxd.html', 'text/html;profile=mcp-app'],
       ['ui://life-hub/card-board.html', 'text/html;profile=mcp-app']]);
     for (const { uri } of list.result.resources) {

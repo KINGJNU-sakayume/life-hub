@@ -1,12 +1,12 @@
 /**
- * Life Hub → potcast candidate contract v1: `album_listening`.
+ * Life Hub → music candidate contract v1 (the app was called potcast before 2026-11-19): `album_listening`.
  *
- * potcast separates intentional listening (digging an artist, listening to an album) from music that
+ * music separates intentional listening (digging an artist, listening to an album) from music that
  * merely played. A candidate is one album the user confirmed they listened to on purpose:
  * - `origin: conversation` — the user said so ("오늘 Blond 다 들었어"): `whole_album` or named tracks.
  * - `origin: spotify_history` — derived from the user's Spotify streaming-history file, after the user
  *   confirmed this album in the conversation: the tracks that were listened to, with play times.
- * potcast resolves the album on Spotify, shows every track for review, and records nothing until the
+ * music resolves the album on Spotify, shows every track for review, and records nothing until the
  * owner approves. No IPs, user agents, usernames or raw history rows are accepted.
  * - `origin: spotify_sync` (source `spotify`) — collected by the hub every hour from the owner's Spotify
  *   recently-played list, album-context plays only (src/spotify/). Always album ID + per-track IDs and times.
@@ -14,12 +14,14 @@
 import { isObject, hasOnly, validDate, validTimestamp, requiredText, optionalText, validateHubEnvelope } from '../core/candidates.js';
 
 const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual', 'spotify']);
+/** `potcast` is this destination's legacy id (src/destinations.js `legacy.ids`): rows and clients from before the rename. */
+const DESTINATION_IDS = new Set(['music', 'potcast']);
 const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 export const MAX_TRACKS = 80;
 
 /**
- * `skipped` is no longer proposed (potcast has no such state) but is still valid here: proposals stored before
- * the change must stay readable, and potcast drops such tracks when it reads them.
+ * `skipped` is no longer proposed (music has no such state) but is still valid here: proposals stored before
+ * the change must stay readable, and music drops such tracks when it reads them.
  */
 function validTrack(t) {
   return isObject(t) && hasOnly(t, ['title', 'spotify_track_id', 'status', 'played_at']) &&
@@ -52,23 +54,23 @@ function validAlbumListening(p) {
   return true;
 }
 
-export function validatePotcastCandidate(candidate) {
+export function validateMusicCandidate(candidate) {
   if (!isObject(candidate) || !hasOnly(candidate, [
     'schema_version', 'source', 'source_ref', 'idempotency_key', 'created_at', 'candidate_type', 'payload',
   ]) || candidate.schema_version !== 1 || !SOURCES.has(candidate.source) || !isObject(candidate.payload))
-    throw new Error('Invalid potcast candidate');
-  if (candidate.candidate_type !== 'album_listening') throw new Error('Unsupported potcast candidate type');
-  if (!validAlbumListening(candidate.payload)) throw new Error('Invalid potcast album_listening candidate');
+    throw new Error('Invalid music candidate');
+  if (candidate.candidate_type !== 'album_listening') throw new Error('Unsupported music candidate type');
+  if (!validAlbumListening(candidate.payload)) throw new Error('Invalid music album_listening candidate');
   // Only the hub's own Spotify collection uses the spotify source, and only for spotify_sync.
   if ((candidate.source === 'spotify') !== (candidate.payload.origin === 'spotify_sync'))
-    throw new Error('Invalid potcast album_listening candidate');
+    throw new Error('Invalid music album_listening candidate');
   return structuredClone(candidate);
 }
 
-export function toPotcastCandidate(untrusted) {
+export function toMusicCandidate(untrusted) {
   const hub = validateHubEnvelope(untrusted);
-  if (hub.destination !== 'potcast') throw new Error('Wrong destination');
-  return validatePotcastCandidate({
+  if (!DESTINATION_IDS.has(hub.destination)) throw new Error('Wrong destination');
+  return validateMusicCandidate({
     schema_version: 1, source: hub.source, source_ref: hub.source_ref, idempotency_key: hub.idempotency_key,
     created_at: hub.created_at, candidate_type: hub.candidate_type, payload: hub.payload,
   });

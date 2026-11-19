@@ -167,7 +167,7 @@ start, and on each refresh while nothing local is waiting, a newer remote versio
 ```json
 {
   "app": "board", "version": 1,
-  "layout": { "v": 1, "g": { "day": [["board:weather", "2x2"]], "media": [["animan:now", "2x2"]] }, "tray": ["potcast:recent"] },
+  "layout": { "v": 1, "g": { "day": [["board:weather", "2x2"]], "media": [["animan:now", "2x2"]] }, "tray": ["music:recent"] },
   "memos": [ { "key": "…", "text": "시청은 늘고 독서는 잠시 쉬었어요.", "approved_at": "…" } ]
 }
 ```

@@ -40,7 +40,7 @@ PALATE v1 candidates omit `hub_version` and `destination` and instead use `schem
 - **Food**: PALATE is the source of truth for actual meals, menus, places and wishes.
 - **Kyeokyeoi**: independently confirmed visits and user-chosen memories; not an automatic activity-completion source.
 - **Achievement**: activity logs and achievement evaluation, not copies of the full diary.
-- **Potcast**: personal listening/review data stays separate from editorial Notes. Replays are not proof of listening.
+- **music**: personal listening/review data stays separate from editorial Notes. Replays are not proof of listening.
 - **Diaryroulette**: missions depend on site-owned cooldown/date rules and require current data; Hub must never invent today's assigned mission.
 
 Decide revision, link and conflict protocols per destination before adding each adapter. No cross-site propagation of deletions without a user-defined policy.

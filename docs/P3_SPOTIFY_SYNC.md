@@ -1,17 +1,17 @@
-# P3 — Spotify listening sync for potcast
+# P3 — Spotify listening sync for music
 
-Every hour the Worker's cron trigger reads the owner's Spotify **recently played** list and proposes the albums the owner listened to on purpose to potcast. Nothing is recorded until the owner approves each album, track by track, in potcast.
+Every hour the Worker's cron trigger reads the owner's Spotify **recently played** list and proposes the albums the owner listened to on purpose to music. Nothing is recorded until the owner approves each album, track by track, in music.
 
 ## What counts
 
 - Only plays **started from the album itself** (the play's context is that album). Playlists, radio, artist pages, search results and autoplay never count — music that merely came up is not "digging".
 - Plays of one album with gaps of at most an hour form a session. A session is proposed once it is **closed** (last play more than two hours ago), so one listening session is never split across polls.
 - Sessions with fewer than 3 **listened** tracks (or the whole album when it is shorter) are dropped as "just clicked in".
-- Per track: Spotify gives the time each play ended, not its length. The time since the previous play ended approximates it — **listened** when it is at least min(90 % of the track, 2 minutes), otherwise it was skipped past and is left out of the proposal (potcast has no skipped state). The first play of a session counts as listened (Spotify lists only plays of 30 s or more). The owner corrects anything in potcast.
+- Per track: Spotify gives the time each play ended, not its length. The time since the previous play ended approximates it — **listened** when it is at least min(90 % of the track, 2 minutes), otherwise it was skipped past and is left out of the proposal (music has no skipped state). The first play of a session counts as listened (Spotify lists only plays of 30 s or more). The owner corrects anything in music.
 
 ## Candidate
 
-`destination: potcast`, `source: spotify` (only this collector uses it), `candidate_type: album_listening`, payload `origin: spotify_sync` with `spotify_album_id`, `listened_on` (Korean date of the session start) and per-track `spotify_track_id`, `title`, `status`, `played_at`. Idempotency key `spsync-<album id>-<first play ms>`.
+`destination: music` (`potcast` before 2026-11-19), `source: spotify` (only this collector uses it), `candidate_type: album_listening`, payload `origin: spotify_sync` with `spotify_album_id`, `listened_on` (Korean date of the session start) and per-track `spotify_track_id`, `title`, `status`, `played_at`. Idempotency key `spsync-<album id>-<first play ms>`.
 
 ## Storage and privacy
 
@@ -29,7 +29,7 @@ One cron run per hour: one token refresh and one API request (two subrequests), 
 
 ## Setup
 
-1. Spotify Developer Dashboard → the app potcast already uses (or a new one) → **Redirect URIs**: add `https://<hub origin>/spotify/callback`. The app owner needs Spotify Premium (Spotify's development-mode rule since February 2026).
+1. Spotify Developer Dashboard → the app music already uses (or a new one) → **Redirect URIs**: add `https://<hub origin>/spotify/callback`. The app owner needs Spotify Premium (Spotify's development-mode rule since February 2026).
 2. GitHub repository variable `HUB_SPOTIFY_CLIENT_ID` = that app's Client ID.
 3. Cloudflare dashboard → Worker `life-hub-api` → Settings → Variables and Secrets → add **Secret** `HUB_SPOTIFY_TOKEN_KEY` = a random string of 32+ characters (a password manager can generate one). Losing or changing it only means linking Spotify again.
 4. Deploy with **apply migrations** (0007).

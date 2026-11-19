@@ -83,7 +83,7 @@ no KV/R2. Card HTML is served from the Worker bundle.
 | 4 (done) | 업적 라이브러리: record card + `achievement_definition` (count/total/streak/tag/tag_count), category picker from the owner's tree (`P3_ACHIEVEMENT.md`). Shared picker (`cards/picker.js`) also used by 켜켜이. |
 | 5 (done) | 역 도장깨기: draw card (from the shared pool) + visit card (stamp), per-kind refs limits (`P3_SUB.md`); R2 photo hand-off stays a separate step. |
 | 6 (done) | AniMan progress card (`P3_ANIMAN.md`); 책장 reading card with works/editions refs (`P3_LETTERBOOKXD.md`). |
-| 7 (done) | potcast: track-level album card; `review_listening` shows Spotify-collected albums as cards (`P3_POTCAST.md`). |
+| 7 (done) | music (then potcast): track-level album card; `review_listening` shows Spotify-collected albums as cards (`P3_MUSIC.md`). |
 
 ## After deploying stage 1
 

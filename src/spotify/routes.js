@@ -31,7 +31,7 @@ async function statusPage(env, notice = '') {
   const status = await spotifyStatus(env);
   const body = `<h1>Spotify 청취 수집</h1>
 ${notice ? `<p class="warn">${escapeHtml(notice)}</p>` : ''}
-<p class="muted">한 시간마다 Spotify의 최근 재생 목록을 확인해서, <strong>앨범에서 직접 재생한</strong> 곡만 앨범 단위로 묶어 potcast에 제안해요. 플레이리스트·라디오·자동 재생은 세지 않아요. 제안은 potcast에서 곡별로 확인하고 승인해야 기록돼요.</p>
+<p class="muted">한 시간마다 Spotify의 최근 재생 목록을 확인해서, <strong>앨범에서 직접 재생한</strong> 곡만 앨범 단위로 묶어 music에 제안해요. 플레이리스트·라디오·자동 재생은 세지 않아요. 제안은 music에서 곡별로 확인하고 승인해야 기록돼요.</p>
 ${status ? `<p>연결됨 · ${escapeHtml(fmt(status.linked_at))}<br>마지막 수집: ${escapeHtml(fmt(status.last_polled_at))} · 정리 대기 중인 재생 ${Number(status.waiting)}개</p>
 ${status.last_error ? `<p class="warn">${escapeHtml(ERROR_TEXT[status.last_error] ?? ERROR_TEXT.server)}</p>` : ''}
 ${form('/spotify/poll', '지금 수집')}${status.last_error === 'revoked' ? form('/spotify/connect', 'Spotify 다시 연결', true) : ''}${form('/spotify/disconnect', '연결 해제')}`
@@ -93,7 +93,7 @@ export async function handleSpotify(request, env, fetchFn = fetch) {
     const r = await pollSpotify(env, fetchFn);
     if (!r) return statusPage(env, 'Spotify가 연결되어 있지 않아요.');
     if (r.error) return statusPage(env, ERROR_TEXT[r.error] ?? ERROR_TEXT.server);
-    return statusPage(env, `새 재생 ${r.stored}개를 확인했고, potcast에 앨범 ${r.proposed}개를 제안했어요.`);
+    return statusPage(env, `새 재생 ${r.stored}개를 확인했고, music에 앨범 ${r.proposed}개를 제안했어요.`);
   }
 
   if (url.pathname === '/spotify/disconnect' && request.method === 'POST') {

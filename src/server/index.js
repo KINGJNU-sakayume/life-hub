@@ -4,8 +4,9 @@
  * One OAuth authorization server, one protected resource per client, plus the P1 API:
  * - /mcp/*                    Claude/Codex/ChatGPT connectors (MCP), scope hub:propose
  * - /<app path>/*             each destination app's inbox API (src/destinations.js), e.g.
- *                             /palate (food:inbox), /kyeokyeoi, /potcast, /achievement; plus <path>/v1/sync
- *                             (P6) and <path>/v1/board (P7, scope <id>:board)
+ *                             /palate (food:inbox), /kyeokyeoi, /music, /achievement; plus <path>/v1/sync
+ *                             (P6) and <path>/v1/board (P7, scope <id>:board). A renamed app also answers on its
+ *                             old path (/potcast → the /music handler), with its old scopes and token role.
  * - /board/*                  Life Board (docs/P7_BOARD.md): /board/v1/tiles (board:read), /board/v1/sync (board:sync)
  * - /authorize                owner password + consent page (ours)
  * - /oauth/token, /oauth/register, /.well-known/oauth-authorization-server   the library's
@@ -22,7 +23,9 @@ import {
 import { handleRequest } from './worker.js';
 import { handleAuthorize } from '../auth/owner-login.js';
 import { isAllowedMcpCallback, isAllowedRegistrationCallback, isConfiguredLocalCallback, SCOPES, RESOURCE_PATHS, ALL_SCOPES } from '../auth/clients.js';
-import { DESTINATIONS, redirectUriFor, localRedirectUriFor, appUrlFor, boardScope } from '../destinations.js';
+import {
+  DESTINATIONS, redirectUriFor, localRedirectUriFor, appUrlFor, boardScope, destinationPaths, scopeAliases,
+} from '../destinations.js';
 import { handleManifestRequest, handleBoardRequest } from '../board/api.js';
 import { handleBoardProposal } from '../board/proposals.js';
 import { handleMcpRequest } from '../mcp/protocol.js';
@@ -33,19 +36,21 @@ import { pollSpotify } from '../spotify/sync.js';
 import { deleteExpiredTickets } from './store.js';
 
 const ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
-const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.map((d) => d.path.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
+const OAUTH_PATHS = new RegExp(`^/(?:mcp|${DESTINATIONS.flatMap(destinationPaths).map((p) => p.slice(1)).join('|')}|authorize|oauth/|\\.well-known/oauth-)`);
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const notConfigured = () => new Response(JSON.stringify({ error: 'OAuth is not configured' }), { status: 503, headers: JSON_HEADERS });
 const forbidden = () => new Response(JSON.stringify({ error: 'Token is not valid for this Life Hub' }), { status: 403, headers: JSON_HEADERS });
 
 /**
- * Shared checks: the token's owner must be the current owner, its role must match, and it must carry
- * one of the accepted scopes (the first is the one asked for on step-up).
+ * Shared checks: the token's owner must be the current owner, its role must match (one of `role` when it is a
+ * list: a renamed app's current and old role), and it must carry one of the accepted scopes (the first is the one
+ * asked for on step-up).
  */
 function guard(env, ctx, role, scopes) {
   const props = ctx.props ?? {};
+  const roles = Array.isArray(role) ? role : [role];
   // A token minted for a different owner (e.g. before HUB_OWNER_ID was rotated) is not valid here.
-  if (props.role !== role || !env.HUB_OWNER_ID || props.ownerId !== env.HUB_OWNER_ID) return forbidden();
+  if (!roles.includes(props.role) || !env.HUB_OWNER_ID || props.ownerId !== env.HUB_OWNER_ID) return forbidden();
   const accepted = Array.isArray(scopes) ? scopes : [scopes];
   if (!accepted.some((s) => ctx.auth?.scope?.includes(s))) return insufficientScope(ctx.auth, [accepted[0]]);
   if (!env.DB || typeof env.DB.prepare !== 'function') return notConfigured();
@@ -76,39 +81,44 @@ export const mcpHandler = {
  */
 const APP_NAMES = Object.freeze(Object.fromEntries(DESTINATIONS.map((d) => [d.id, d.app])));
 function destinationHandler(d) {
-  const prefix = d.path + '/v1';
-  const syncPrefix = prefix + '/sync';
-  const boardPath = prefix + '/board';
-  const tilesPath = prefix + '/tiles';
-  const proposalsPath = prefix + '/proposals';
+  // A renamed app keeps its old token role and scope spellings (`potcast`, `potcast:board` for `music`).
+  const roles = [d.role, ...(d.legacy?.ids ?? [])];
+  const accepted = (scope) => scopeAliases(d, scope);
   return {
     async fetch(request, env, ctx) {
       const path = new URL(request.url).pathname;
+      // The same handler serves the app's current path and its old alias (/potcast/v1/... for /music/v1/...).
+      const base = destinationPaths(d).find((p) => path === p || path.startsWith(p + '/')) ?? d.path;
+      const prefix = base + '/v1';
+      const syncPrefix = prefix + '/sync';
+      const boardPath = prefix + '/board';
+      const tilesPath = prefix + '/tiles';
+      const proposalsPath = prefix + '/proposals';
       if (d.boardClient && path === tilesPath) {
-        return guard(env, ctx, d.role, SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
+        return guard(env, ctx, roles, SCOPES.BOARD_READ) ?? handleBoardRequest(request, {
           db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), appNames: APP_NAMES,
         });
       }
       if (d.boardClient && path === proposalsPath) {
         // Roulette proposals (P7_BOARD.md section 8): a board grant from before B5 lacks the scope → step-up, reconnect.
-        return guard(env, ctx, d.role, SCOPES.BOARD_PROPOSE) ?? handleBoardProposal(request, {
+        return guard(env, ctx, roles, SCOPES.BOARD_PROPOSE) ?? handleBoardProposal(request, {
           db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(),
         });
       }
       if (!d.boardClient && (path === boardPath || path.startsWith(boardPath + '/'))) {
         // Board tiles (docs/P7_BOARD.md section 5): a grant from before P7 lacks the scope → step-up, the app reconnects.
-        return guard(env, ctx, d.role, boardScope(d)) ?? handleManifestRequest(request, {
-          db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), app: d.id, path: boardPath,
+        return guard(env, ctx, roles, accepted(boardScope(d))) ?? handleManifestRequest(request, {
+          db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), app: d.id, path: boardPath, legacyApps: d.legacy?.ids ?? [],
         });
       }
       if (d.sync && (path === syncPrefix || path.startsWith(syncPrefix + '/'))) {
-        return guard(env, ctx, d.role, d.sync.scope) ?? handleSyncRequest(request, {
+        return guard(env, ctx, roles, accepted(d.sync.scope)) ?? handleSyncRequest(request, {
           db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: d.id, prefix: syncPrefix,
           limits: { maxBytes: d.sync.maxBytes, keep: d.sync.keep },
         });
       }
       if (!d.scope) return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
-      return guard(env, ctx, d.role, d.scope) ?? handleInboxRequest(request, {
+      return guard(env, ctx, roles, accepted(d.scope)) ?? handleInboxRequest(request, {
         db: env.DB, ownerId: env.HUB_OWNER_ID, now: () => Date.now(), destination: d.id, prefix,
       });
     },
@@ -122,7 +132,8 @@ export function createServers(origin) {
   const mcpResource = origin + RESOURCE_PATHS.MCP;
   const authorizationServer = new OAuthAuthorizationServer({
     issuer: origin,
-    resources: [mcpResource, ...DESTINATIONS.map((d) => origin + d.path)],
+    // A renamed app's old path stays a resource, so its existing grants and refreshes keep their audience.
+    resources: [mcpResource, ...DESTINATIONS.flatMap(destinationPaths).map((p) => origin + p)],
     // Older MCP clients may omit `resource`; they mean the MCP endpoint.
     defaultResource: mcpResource,
     authorizeEndpoint: origin + '/authorize',
@@ -154,13 +165,30 @@ export function createServers(origin) {
     resourceMetadata: { resource: mcpResource, authorization_servers: [origin] },
     requiredScopes: [SCOPES.HUB_PROPOSE], validateToken, handler: mcpHandler,
   });
-  const inboxes = new Map(DESTINATIONS.map((d) => [d.id, new OAuthResourceServer({
-    resourceMetadata: { resource: origin + d.path, authorization_servers: [origin] },
-    // The resource's base scope: the inbox scope, or the sync scope for a sync-only app. Sync routes of an app
-    // with an inbox check their own scope again in destinationHandler. Life Board's base scope is board:read, so its
-    // grants from before it had an inbox keep reading tiles.
-    requiredScopes: [d.boardClient ? SCOPES.BOARD_READ : (d.scope ?? d.sync.scope)], validateToken, handler: inboxHandlers[d.id],
-  })]));
+  // One resource server per path of an app: its current path and, for a renamed app, its old one. A token issued
+  // for either path of the same app is accepted on both, reported with the audience of the path it is used on, so
+  // an app that switched paths keeps working with the grant it already holds.
+  const resourceServer = (d, path) => {
+    const own = origin + path;
+    const siblings = destinationPaths(d).map((p) => origin + p);
+    return new OAuthResourceServer({
+      resourceMetadata: { resource: own, authorization_servers: [origin] },
+      // The resource's base scope: the inbox scope, or the sync scope for a sync-only app. Sync routes of an app
+      // with an inbox check their own scope again in destinationHandler. Life Board's base scope is board:read, so its
+      // grants from before it had an inbox keep reading tiles. The library only checks the token's audience; scopes
+      // (including a renamed app's old spellings) are checked in destinationHandler.
+      requiredScopes: [d.boardClient ? SCOPES.BOARD_READ : (d.scope ?? d.sync.scope)],
+      validateToken: siblings.length === 1 ? validateToken : (env) => async (_resource, token) => {
+        for (const resource of siblings) {
+          const validation = await authorizationServer.validateToken(resource, token, env);
+          if (validation) return { ...validation, audience: own };
+        }
+        return null;
+      },
+      handler: inboxHandlers[d.id],
+    });
+  };
+  const inboxes = new Map(DESTINATIONS.flatMap((d) => destinationPaths(d).map((p) => [p, resourceServer(d, p)])));
   return { authorizationServer, mcp, inboxes };
 }
 
@@ -194,9 +222,11 @@ export default {
     if (under(path, RESOURCE_PATHS.MCP) || under(path, '/.well-known/oauth-protected-resource' + RESOURCE_PATHS.MCP))
       return s.mcp.fetch(request, env, ctx);
     for (const d of DESTINATIONS) {
-      if (under(path, d.path) || under(path, '/.well-known/oauth-protected-resource' + d.path)) {
-        if (!redirectUriFor(env, d) && !localRedirectUriFor(env, d)) return notConfigured();
-        return s.inboxes.get(d.id).fetch(request, env, ctx);
+      for (const p of destinationPaths(d)) {
+        if (under(path, p) || under(path, '/.well-known/oauth-protected-resource' + p)) {
+          if (!redirectUriFor(env, d) && !localRedirectUriFor(env, d)) return notConfigured();
+          return s.inboxes.get(p).fetch(request, env, ctx);
+        }
       }
     }
     if (path === '/spotify' || path.startsWith('/spotify/')) return handleSpotify(request, env);
@@ -210,7 +240,7 @@ export default {
       return s.authorizationServer.fetch(request, env, ctx);
     return handleRequest(request, env);
   },
-  /** Cron trigger (wrangler `triggers.crons`): hourly Spotify collection for potcast. Off unless configured. */
+  /** Cron trigger (wrangler `triggers.crons`): hourly Spotify collection for music. Off unless configured. */
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(pollSpotify(env).catch((error) => console.warn('spotify poll failed', error?.message)));
     // Card tickets expire after 7 days; drop them so D1 stays small.

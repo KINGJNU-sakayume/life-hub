@@ -2,7 +2,7 @@
  * Destination inbox API, one instance per destination app (each its own OAuth resource):
  *   PALATE    → prefix /palate/v1,    destination food,      scope food:inbox
  *   켜켜이     → prefix /kyeokyeoi/v1, destination kyeokyeoi, scope kyeokyeoi:inbox
- *   potcast   → prefix /potcast/v1,   destination potcast,   scope potcast:inbox
+ *   music     → prefix /music/v1,     destination music,     scope music:inbox (old alias: /potcast/v1, potcast:inbox)
  *   (and every other entry of src/destinations.js the same way)
  *
  * After the owner signs in, the app may:

@@ -5,7 +5,7 @@
   // Required for OAuth Client ID Metadata Documents (SSRF protection on outbound metadata fetches).
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
-  // Hourly Spotify collection for potcast (does nothing unless Spotify is configured and linked).
+  // Hourly Spotify collection for music (does nothing unless Spotify is configured and linked).
   "triggers": { "crons": ["23 * * * *"] },
   "vars": {
     // Exact public origin of this Worker, no trailing slash. The MCP connector URL is <origin>/mcp.
@@ -18,9 +18,12 @@
     "HUB_KYEOKYEOI_REDIRECT_URI": "REPLACE_WITH_YOUR_KYEOKYEOI_REDIRECT_URI",
     // Optional: the same app run on your computer (http://127.0.0.1:<port>/lifehub/). Empty disables it.
     "HUB_KYEOKYEOI_LOCAL_REDIRECT_URI": "REPLACE_WITH_YOUR_KYEOKYEOI_LOCAL_REDIRECT_URI",
-    // Optional: potcast's Life Hub callback page URL. Empty disables the potcast inbox API.
+    // Optional: music's Life Hub callback page URL. Empty (and the legacy variable below empty) disables the music inbox API.
+    "HUB_MUSIC_REDIRECT_URI": "REPLACE_WITH_YOUR_MUSIC_REDIRECT_URI",
+    // Optional: the Life Hub callback of music run on your computer (http://127.0.0.1:<port>/lifehub/). Empty disables it.
+    "HUB_MUSIC_LOCAL_REDIRECT_URI": "REPLACE_WITH_YOUR_MUSIC_LOCAL_REDIRECT_URI",
+    // Legacy (music was called potcast): the old callbacks keep connecting during the rollout. Remove later.
     "HUB_POTCAST_REDIRECT_URI": "REPLACE_WITH_YOUR_POTCAST_REDIRECT_URI",
-    // Optional: the Life Hub callback of potcast run on your computer (http://127.0.0.1:<port>/lifehub/). Empty disables it.
     "HUB_POTCAST_LOCAL_REDIRECT_URI": "REPLACE_WITH_YOUR_POTCAST_LOCAL_REDIRECT_URI",
     // Optional: 업적 라이브러리's Life Hub callback page URL. Empty disables its inbox API.
     "HUB_ACHIEVEMENT_REDIRECT_URI": "REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI",
@@ -50,7 +53,7 @@
     "HUB_BOARD_REDIRECT_URI": "REPLACE_WITH_YOUR_BOARD_REDIRECT_URI",
     // Optional: the same app run on your computer (http://127.0.0.1:<port>/lifehub/). Empty disables it.
     "HUB_BOARD_LOCAL_REDIRECT_URI": "REPLACE_WITH_YOUR_BOARD_LOCAL_REDIRECT_URI",
-    // Optional: Spotify app client ID (public, 32 hex) for the hourly potcast collection. Empty disables it.
+    // Optional: Spotify app client ID (public, 32 hex) for the hourly music collection. Empty disables it.
     // Also needs the HUB_SPOTIFY_TOKEN_KEY secret (Cloudflare dashboard) and the redirect URI <origin>/spotify/callback in the Spotify app.
     "HUB_SPOTIFY_CLIENT_ID": "REPLACE_WITH_YOUR_SPOTIFY_CLIENT_ID"
   },

@@ -41,16 +41,33 @@ export const FIELDS = Object.freeze([
     hint: 'empty, or 켜켜이\'s https app URL such as https://<user>.github.io/kyeokyeoi/ (no query or fragment)',
   },
   {
+    env: 'HUB_MUSIC_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_MUSIC_REDIRECT_URI', optional: true,
+    // Renamed from HUB_POTCAST_REDIRECT_URI (2026-11-19): the old variable is read when this one is empty.
+    fallbackEnv: 'HUB_POTCAST_REDIRECT_URI',
+    valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or music\'s Life Hub callback URL such as https://<user>.github.io/music/lifehub/ (no query or fragment)',
+  },
+  {
+    env: 'HUB_MUSIC_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_MUSIC_LOCAL_REDIRECT_URI', optional: true,
+    fallbackEnv: 'HUB_POTCAST_LOCAL_REDIRECT_URI',
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of music run on your computer, such as http://127.0.0.1:5173/lifehub/',
+  },
+  // Legacy (renamed to HUB_MUSIC_*): still rendered so the old callback keeps its profile during the rollout.
+  // Remove once the app no longer connects from the old address.
+  {
     env: 'HUB_POTCAST_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_POTCAST_REDIRECT_URI', optional: true,
     valid: /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
-    hint: 'empty, or potcast\'s Life Hub callback URL such as https://<user>.github.io/potcast/lifehub/ (no query or fragment)',
+    hint: 'empty, or the music app\'s old (potcast) Life Hub callback URL (legacy; use HUB_MUSIC_REDIRECT_URI)',
   },
   {
     env: 'HUB_POTCAST_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_POTCAST_LOCAL_REDIRECT_URI', optional: true,
     valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
     normalize: (v) => v.trim(),
-    hint: 'empty, or the Life Hub callback of potcast run on your computer, such as http://127.0.0.1:5173/lifehub/',
+    hint: 'empty, or the music app\'s old (potcast) local callback (legacy; use HUB_MUSIC_LOCAL_REDIRECT_URI)',
   },
   {
     env: 'HUB_ACHIEVEMENT_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ACHIEVEMENT_REDIRECT_URI', optional: true,
@@ -159,7 +176,8 @@ export const FIELDS = Object.freeze([
 export function renderWranglerConfig(exampleText, values) {
   let out = exampleText;
   for (const field of FIELDS) {
-    const raw = values[field.env];
+    // A renamed variable falls back to its old name when it is unset or empty.
+    const raw = typeof values[field.env] === 'string' && values[field.env].trim() !== '' ? values[field.env] : values[field.fallbackEnv];
     const value = typeof raw === 'string' ? field.normalize(raw) : '';
     if (!(field.optional && value === '') && !field.valid.test(value)) throw new Error(`${field.env} must be ${field.hint}`);
     const occurrences = out.split(field.placeholder).length - 1;
