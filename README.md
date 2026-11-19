@@ -29,7 +29,7 @@ Destination apps are separate repositories, declared in `src/destinations.js`. S
 |---|---|---|---|---|
 | PALATE (food) | [food](https://github.com/KINGJNU-sakayume/food) | ✓ | – | ✓ (2026-11-08) |
 | 켜켜이 | [kyeokyeoi](https://github.com/KINGJNU-sakayume/kyeokyeoi) | ✓ | – | ✓ (2026-11-08) |
-| potcast | [potcast](https://github.com/KINGJNU-sakayume/potcast) | ✓ (+ hourly Spotify sync, P3) | – | ✓ (2026-11-07) |
+| potcast | [arcplayer](https://github.com/KINGJNU-sakayume/arcplayer) (private; formerly potcast) | ✓ (+ hourly Spotify sync, P3) | – | ✓ (2026-11-07) |
 | 업적 라이브러리 | [achievement](https://github.com/KINGJNU-sakayume/achievement) | ✓ | – | ✓ (2026-11-08) |
 | 책장 | [letterbookxd](https://github.com/KINGJNU-sakayume/letterbookxd) | ✓ | ✓ | ✓ (2026-11-07) |
 | 역 도장깨기 | [sub](https://github.com/KINGJNU-sakayume/sub) | ✓ (+ station draws proposed by the board's roulette) | – | ✓ (2026-11-06) |
@@ -37,6 +37,8 @@ Destination apps are separate repositories, declared in `src/destinations.js`. S
 | 일기 룰렛 | [diaryroulette](https://github.com/KINGJNU-sakayume/diaryroulette) | ✓ | – | ✓ (2026-11-08) |
 | ELO Sorter | [elosorter](https://github.com/KINGJNU-sakayume/elosorter) | – (sync only) | ✓ | ✓ (2026-11-07) |
 | Life Board | [board](https://github.com/KINGJNU-sakayume/board) | memos only (approved in Claude cards) | ✓ (board layout) | reads every app's tiles |
+
+**Where each app runs.** All apps except potcast run from their GitHub Pages address, and Life Hub only accepts that exact address (`HUB_<APP>_REDIRECT_URI`). potcast (the `arcplayer` repository) runs on the owner's computer, because its original lyrics and 21:9 artwork stay local; it connects through its loopback callback (`HUB_POTCAST_LOCAL_REDIRECT_URI`, `http://127.0.0.1:5173/lifehub/`) and `HUB_POTCAST_REDIRECT_URI` can stay empty. Life Board also implements a local connection (`HUB_BOARD_LOCAL_REDIRECT_URI`, `http://127.0.0.1:8080/lifehub/`). The other `HUB_*_LOCAL_REDIRECT_URI` variables are accepted by the Hub, but those apps only start a connection from their Pages address, so leaving them empty is correct.
 
 Each app keeps its own README for its side of the connection; per-app instructions for adding board tiles are in the board repository's `docs/prompts/`.
 
