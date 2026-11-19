@@ -37,14 +37,14 @@ import { toBoardCandidate } from './adapters/board.js';
 export const DESTINATIONS = Object.freeze([
   {
     id: 'food', app: 'PALATE', role: 'palate', path: '/palate', scope: 'food:inbox', legacyProposeScope: 'food:propose',
-    redirectVar: 'HUB_PALATE_REDIRECT_URI', types: ['meal', 'wish'], adapter: toFoodCandidate, label: 'PALATE',
+    redirectVar: 'HUB_PALATE_REDIRECT_URI', localRedirectVar: 'HUB_PALATE_LOCAL_REDIRECT_URI', types: ['meal', 'wish'], adapter: toFoodCandidate, label: 'PALATE',
     // Conversation card (src/mcp/cards). PALATE saves `approved` candidates since its stage-2 release.
     card: { approve: true },
     grants: 'Life Hub 수신함의 <strong>음식 후보를 가져오고</strong>, PALATE에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'kyeokyeoi', app: '켜켜이', role: 'kyeokyeoi', path: '/kyeokyeoi', scope: 'kyeokyeoi:inbox', legacyProposeScope: 'kyeokyeoi:propose',
-    redirectVar: 'HUB_KYEOKYEOI_REDIRECT_URI', types: ['memory', 'visit'], adapter: toKyeokyeoiCandidate, label: 'kyeokyeoi',
+    redirectVar: 'HUB_KYEOKYEOI_REDIRECT_URI', localRedirectVar: 'HUB_KYEOKYEOI_LOCAL_REDIRECT_URI', types: ['memory', 'visit'], adapter: toKyeokyeoiCandidate, label: 'kyeokyeoi',
     // Conversation card; 켜켜이 saves `approved` candidates since its stage-2 release.
     card: { approve: true },
     // Reference lists the app may publish for card pickers (PUT /kyeokyeoi/v1/refs/<kind>).
@@ -64,7 +64,7 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'achievement', app: '업적 라이브러리', role: 'achievement', path: '/achievement', scope: 'achievement:inbox',
-    redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', types: ['activity_record', 'achievement_definition'], adapter: toAchievementCandidate, label: 'achievement',
+    redirectVar: 'HUB_ACHIEVEMENT_REDIRECT_URI', localRedirectVar: 'HUB_ACHIEVEMENT_LOCAL_REDIRECT_URI', types: ['activity_record', 'achievement_definition'], adapter: toAchievementCandidate, label: 'achievement',
     // Record/achievement card; the app saves `approved` items since its stage-4 release.
     card: { approve: true },
     // The owner's category tree (ids, names, top-level group) for the card's category picker.
@@ -73,7 +73,7 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'letterbookxd', app: '책장', role: 'letterbookxd', path: '/letterbookxd', scope: 'letterbookxd:inbox',
-    redirectVar: 'HUB_LETTERBOOKXD_REDIRECT_URI', types: ['reading_record'], adapter: toLetterbookxdCandidate, label: 'letterbookxd',
+    redirectVar: 'HUB_LETTERBOOKXD_REDIRECT_URI', localRedirectVar: 'HUB_LETTERBOOKXD_LOCAL_REDIRECT_URI', types: ['reading_record'], adapter: toLetterbookxdCandidate, label: 'letterbookxd',
     // Reading card; the app records `approved` books since its stage-6 release.
     card: { approve: true },
     // The app's catalogue: works (id, title, author) and editions (id, publisher, "workId/volume").
@@ -84,7 +84,7 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'sub', app: '역 도장깨기', role: 'sub', path: '/sub', scope: 'sub:inbox',
-    redirectVar: 'HUB_SUB_REDIRECT_URI', types: ['station_visit', 'station_draw'], adapter: toSubCandidate, label: 'sub',
+    redirectVar: 'HUB_SUB_REDIRECT_URI', localRedirectVar: 'HUB_SUB_LOCAL_REDIRECT_URI', types: ['station_visit', 'station_draw'], adapter: toSubCandidate, label: 'sub',
     // Station card (draw + stamp); the app saves `approved` items since its stage-5 release.
     card: { approve: true },
     // lines (name, colour), stations (the public line-station list) and pool (what can be drawn now, which
@@ -95,7 +95,7 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'animan', app: 'AniMan', role: 'animan', path: '/animan', scope: 'animan:inbox',
-    redirectVar: 'HUB_ANIMAN_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
+    redirectVar: 'HUB_ANIMAN_REDIRECT_URI', localRedirectVar: 'HUB_ANIMAN_LOCAL_REDIRECT_URI', types: ['media_progress'], adapter: toAnimanCandidate, label: 'animan',
     // Progress card; the app marks `approved` progress since its stage-6 release.
     card: { approve: true },
     // Watch progress syncs as one document.
@@ -106,7 +106,7 @@ export const DESTINATIONS = Object.freeze([
   },
   {
     id: 'diaryroulette', app: '일기 룰렛', role: 'diaryroulette', path: '/diaryroulette', scope: 'diaryroulette:inbox',
-    redirectVar: 'HUB_DIARYROULETTE_REDIRECT_URI', types: ['daily_mission'], adapter: toDiaryrouletteCandidate, label: 'diaryroulette',
+    redirectVar: 'HUB_DIARYROULETTE_REDIRECT_URI', localRedirectVar: 'HUB_DIARYROULETTE_LOCAL_REDIRECT_URI', types: ['daily_mission'], adapter: toDiaryrouletteCandidate, label: 'diaryroulette',
     // Roulette card; the app saves `approved` missions after its own day/cooldown checks.
     card: { approve: true },
     // The mission list and today's state (resting missions, a mission already drawn today) the app shares.
@@ -116,14 +116,14 @@ export const DESTINATIONS = Object.freeze([
   {
     // Sync-only: no inbox, candidates or card. The session lives on this Hub's private database.
     id: 'elosorter', app: 'ELO Sorter', role: 'elosorter', path: '/elosorter',
-    redirectVar: 'HUB_ELOSORTER_REDIRECT_URI', label: 'elosorter',
+    redirectVar: 'HUB_ELOSORTER_REDIRECT_URI', localRedirectVar: 'HUB_ELOSORTER_LOCAL_REDIRECT_URI', label: 'elosorter',
     sync: { scope: 'elosorter:sync' },
     grants: 'ELO Sorter의 세션(곡·분류·비교 기록)을 이 Life Hub의 비공개 저장소에 <strong>보관하고 다른 기기에서 불러올 수</strong> 있어요. 내용은 공개 저장소에 올라가지 않아요.',
   },
   {
     // Life Board (docs/P7_BOARD.md): reads every app's tiles, keeps its layout, saves approved Claude memos.
     id: 'board', app: 'Life Board', role: 'board', path: '/board', scope: 'board:inbox',
-    redirectVar: 'HUB_BOARD_REDIRECT_URI', types: ['memo'], adapter: toBoardCandidate, label: 'board',
+    redirectVar: 'HUB_BOARD_REDIRECT_URI', localRedirectVar: 'HUB_BOARD_LOCAL_REDIRECT_URI', types: ['memo'], adapter: toBoardCandidate, label: 'board',
     // Memos are approved only in Claude cards; the board saves `approved` memos into its document, then sends a receipt.
     card: { approve: true },
     sync: { scope: 'board:sync', maxBytes: 65536, keep: 10 },

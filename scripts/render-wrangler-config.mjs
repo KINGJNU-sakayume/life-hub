@@ -100,6 +100,60 @@ export const FIELDS = Object.freeze([
     normalize: (v) => v.trim(),
     hint: 'empty, or Life Board\'s Life Hub callback URL such as https://<user>.github.io/board/lifehub/ (no query or fragment)',
   },
+  {
+    env: 'HUB_PALATE_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_PALATE_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_KYEOKYEOI_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_KYEOKYEOI_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_ACHIEVEMENT_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ACHIEVEMENT_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_LETTERBOOKXD_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_LETTERBOOKXD_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_SUB_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_SUB_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_ANIMAN_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ANIMAN_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_DIARYROULETTE_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_DIARYROULETTE_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_ELOSORTER_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_ELOSORTER_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
+  {
+    env: 'HUB_BOARD_LOCAL_REDIRECT_URI', placeholder: 'REPLACE_WITH_YOUR_BOARD_LOCAL_REDIRECT_URI', optional: true,
+    valid: /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/,
+    normalize: (v) => v.trim(),
+    hint: 'empty, or the Life Hub callback of this app run on your computer, such as http://127.0.0.1:8080/lifehub/',
+  },
 ]);
 
 export function renderWranglerConfig(exampleText, values) {
