@@ -37,9 +37,10 @@ Settings → Secrets and variables → Actions.
 | `HUB_PUBLIC_ORIGIN` | `https://life-hub-api.<your-subdomain>.workers.dev` — exactly, no trailing slash or path |
 | `HUB_PALATE_REDIRECT_URI` | optional (P2b): PALATE's app URL, e.g. `https://<user>.github.io/food/` |
 | `HUB_KYEOKYEOI_REDIRECT_URI` | optional (P3): 켜켜이's app URL, e.g. `https://<user>.github.io/kyeokyeoi/` |
-| `HUB_POTCAST_REDIRECT_URI` | optional (P3): potcast's Life Hub callback page, e.g. `https://<user>.github.io/potcast/lifehub/` |
-| `HUB_POTCAST_LOCAL_REDIRECT_URI` | optional: potcast run on your computer, exactly `http://127.0.0.1:5173/lifehub/` (see P3_POTCAST.md) |
-| `HUB_SPOTIFY_CLIENT_ID` | optional: Spotify app Client ID for the hourly potcast collection ([P3_SPOTIFY_SYNC.md](P3_SPOTIFY_SYNC.md)); also needs the Cloudflare secret `HUB_SPOTIFY_TOKEN_KEY` |
+| `HUB_MUSIC_REDIRECT_URI` | optional (P3): music's Life Hub callback page, e.g. `https://<user>.github.io/music/lifehub/` |
+| `HUB_MUSIC_LOCAL_REDIRECT_URI` | optional: music run on your computer, exactly `http://127.0.0.1:5173/lifehub/` (see [P3_MUSIC.md](P3_MUSIC.md)) |
+| `HUB_POTCAST_REDIRECT_URI`, `HUB_POTCAST_LOCAL_REDIRECT_URI` | legacy names of the two above (music was called potcast): read when the new one is empty, and their callbacks keep connecting. Delete them once the app connects only from its music address |
+| `HUB_SPOTIFY_CLIENT_ID` | optional: Spotify app Client ID for the hourly music collection ([P3_SPOTIFY_SYNC.md](P3_SPOTIFY_SYNC.md)); also needs the Cloudflare secret `HUB_SPOTIFY_TOKEN_KEY` |
 | `HUB_ANIMAN_REDIRECT_URI` | optional (P3): AniMan's Life Hub callback page, e.g. `https://<user>.github.io/animan/lifehub/` |
 | `HUB_SUB_REDIRECT_URI` | optional (P3): 역 도장깨기 (sub)'s Life Hub callback page, e.g. `https://<user>.github.io/sub/lifehub/` |
 | `HUB_LETTERBOOKXD_REDIRECT_URI` | optional (P3): 책장 (letterbookxd)'s Life Hub callback page, e.g. `https://<user>.github.io/letterbookxd/lifehub/` |

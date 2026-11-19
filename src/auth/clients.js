@@ -5,7 +5,9 @@
  * client, so a client cannot ask for another profile's scope or resource. Every profile receives
  * exactly its own scopes, for exactly its own resource.
  */
-import { DESTINATIONS, redirectUriFor, boardScope, BOARD_READ_SCOPE, isLoopbackAppUrl, localRedirectUriFor } from '../destinations.js';
+import {
+  DESTINATIONS, redirectUrisFor, boardScope, BOARD_READ_SCOPE, isLoopbackAppUrl, localRedirectUrisFor, scopeAliases,
+} from '../destinations.js';
 
 export const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 /** ChatGPT uses this stable callback when OAuth issuer identification is supported. */
@@ -35,7 +37,7 @@ export function isCodexCallback(value) {
 
 export const isAllowedMcpCallback = (uri) => uri === CLAUDE_CALLBACK || isCodexCallback(uri) || isChatgptCallback(uri);
 /** A destination app's local-copy callback configured on this deployment (`localRedirectVar`). */
-export const isConfiguredLocalCallback = (env, uri) => DESTINATIONS.some((d) => localRedirectUriFor(env, d) === uri);
+export const isConfiguredLocalCallback = (env, uri) => DESTINATIONS.some((d) => localRedirectUrisFor(env, d).includes(uri));
 /**
  * What DCR may register, judged without env by the OAuth library's callback: an MCP callback, or a loopback app
  * callback. The worker's fetch handler first narrows the loopback case to exactly a configured local callback
@@ -50,20 +52,24 @@ export const SCOPES = Object.freeze({
   HUB_APPROVE: 'hub:approve',
   // Per-destination proposal scopes from earlier grants; still honored.
   PROPOSE: 'food:propose', KYEOKYEOI_PROPOSE: 'kyeokyeoi:propose',
-  INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', POTCAST_INBOX: 'potcast:inbox',
+  INBOX: 'food:inbox', KYEOKYEOI_INBOX: 'kyeokyeoi:inbox', MUSIC_INBOX: 'music:inbox',
   /** Life Board reads every app's board tiles (docs/P7_BOARD.md section 6). */
   BOARD_READ: BOARD_READ_SCOPE,
   /** Life Board's roulette sends a station draw to 역 도장깨기 as a proposal (P7_BOARD.md section 8). */
   BOARD_PROPOSE: 'board:propose',
 });
-export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', POTCAST: '/potcast', BOARD: '/board' });
+export const RESOURCE_PATHS = Object.freeze({ MCP: '/mcp', PALATE: '/palate', KYEOKYEOI: '/kyeokyeoi', MUSIC: '/music', BOARD: '/board' });
 
-/** Every scope the authorization server knows: MCP proposals, legacy scopes, destination inboxes and sync. */
+/**
+ * Every scope the authorization server knows: MCP proposals, legacy scopes, destination inboxes and sync, and the
+ * old spellings of a renamed app's scopes (`potcast:inbox`, `potcast:board`), which older grants still carry.
+ */
 export const ALL_SCOPES = Object.freeze([
-  SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE, ...DESTINATIONS.map((d) => d.scope).filter(Boolean),
-  ...DESTINATIONS.filter((d) => d.sync).map((d) => d.sync.scope),
+  SCOPES.HUB_PROPOSE, SCOPES.HUB_APPROVE,
+  ...DESTINATIONS.flatMap((d) => scopeAliases(d, d.scope)),
+  ...DESTINATIONS.filter((d) => d.sync).flatMap((d) => scopeAliases(d, d.sync.scope)),
   ...DESTINATIONS.filter((d) => d.legacyProposeScope).map((d) => d.legacyProposeScope),
-  ...DESTINATIONS.map(boardScope).filter(Boolean), SCOPES.BOARD_READ, SCOPES.BOARD_PROPOSE,
+  ...DESTINATIONS.flatMap((d) => scopeAliases(d, boardScope(d))), SCOPES.BOARD_READ, SCOPES.BOARD_PROPOSE,
 ]);
 
 /** Shown under the grant text on the consent page of an app that syncs (P6_SYNC.md section 7). */
@@ -81,6 +87,8 @@ const BOARD_NOTE = 'Life Board에 보여줄 이 앱의 최근 흐름(타일 목�
 function destinationProfile(d, redirectUri) {
   const profile = {
     id: d.role, role: d.role, redirectUri, resourcePath: d.path,
+    // A renamed app also answers on its old resource path (`/potcast` for `music`); see profileFor.
+    ...(d.legacy?.paths?.length ? { legacyResourcePaths: d.legacy.paths, destination: d } : {}),
     scopes: d.boardClient ? [SCOPES.BOARD_READ, d.sync.scope, d.scope, SCOPES.BOARD_PROPOSE] : [d.scope, d.sync?.scope, boardScope(d)].filter(Boolean),
     allowMissingResource: false, title: d.app, grants: d.grants,
     notes: d.boardClient ? [BOARD_CLIENT_NOTE] : [d.scope && d.sync ? SYNC_NOTE : null, BOARD_NOTE].filter(Boolean),
@@ -103,11 +111,10 @@ export function clientProfiles(env) {
     title: 'Claude',
     grants: '음식·추억·방문·음악 감상·활동·독서·역 방문·애니 진행 기록과 보드 메모 후보를 Life Hub 수신함에 <strong>제안</strong>할 수 있어요. 제안은 각 앱에서 직접 승인하기 전까지 실제 기록이 되지 않아요.',
   }];
+  // Every configured callback of an app gets the app's profile: its variable and, for a renamed app, the old
+  // variable too (e.g. HUB_MUSIC_REDIRECT_URI and HUB_POTCAST_REDIRECT_URI), so both addresses keep connecting.
   for (const d of DESTINATIONS) {
-    const redirectUri = redirectUriFor(env, d);
-    if (redirectUri) profiles.push(destinationProfile(d, redirectUri));
-    const localUri = localRedirectUriFor(env, d);
-    if (localUri) profiles.push(destinationProfile(d, localUri));
+    for (const uri of [...redirectUrisFor(env, d), ...localRedirectUrisFor(env, d)]) profiles.push(destinationProfile(d, uri));
   }
   return profiles;
 }
@@ -129,6 +136,14 @@ export function profileFor(env, authRequest) {
     } : null);
   if (!profile) return null;
   const expected = env.HUB_PUBLIC_ORIGIN + profile.resourcePath;
-  if (authRequest.resource === undefined ? !profile.allowMissingResource : authRequest.resource !== expected) return null;
+  if (authRequest.resource === undefined ? !profile.allowMissingResource : authRequest.resource !== expected) {
+    // An app from before its rename asks for its old resource (`/potcast`): same profile, bound to that resource,
+    // with the scopes spelled as it knows them (`potcast:*`). New requests for the current resource get `music:*`.
+    const legacyPath = (profile.legacyResourcePaths ?? []).find((p) => authRequest.resource === env.HUB_PUBLIC_ORIGIN + p);
+    if (!legacyPath) return null;
+    const d = profile.destination;
+    const old = d.legacy.paths.indexOf(legacyPath);
+    return { ...profile, resourcePath: legacyPath, scopes: profile.scopes.map((s) => scopeAliases(d, s)[1 + old] ?? s) };
+  }
   return profile;
 }

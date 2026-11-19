@@ -20,7 +20,7 @@ test('0008 keeps every proposal, receipt and event; adds approved, edits and car
     const a = '11111111-1111-4111-8111-111111111111';
     const b = '22222222-2222-4222-8222-222222222222';
     insert.run(a, 'demo-owner', 'food', 'claude', 'synthetic-0008-01', 'm1', envelope, 'pending', '2026-11-01T00:00:00Z', null);
-    insert.run(b, 'demo-owner', 'potcast', 'spotify', 'synthetic-0008-02', 'm2', '{}', 'pending', '2026-11-01T01:00:00Z', null);
+    insert.run(b, 'demo-owner', 'music', 'spotify', 'synthetic-0008-02', 'm2', '{}', 'pending', '2026-11-01T01:00:00Z', null);
     db.prepare('UPDATE inbox SET status=?, reviewed_at=?, confirmed_entity_id=? WHERE id=?').run('confirmed', '2026-11-02T00:00:00Z', 'receipt-1', a);
     const before = db.prepare('SELECT * FROM inbox_changes ORDER BY seq').all();
     const rowsBefore = db.prepare('SELECT * FROM inbox ORDER BY id').all();

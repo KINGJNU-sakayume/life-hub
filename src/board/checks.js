@@ -22,11 +22,14 @@ function hasDataUri(value, depth = 0) {
   return false;
 }
 
-/** @returns {{ reason: string|null, generatedAt?: string }} generatedAt is normalized (toISOString). */
-export function checkManifest(app, m, nowMs) {
+/**
+ * `legacyApps`: names the app had before a rename (`potcast` for `music`); a manifest may still carry one.
+ * @returns {{ reason: string|null, generatedAt?: string }} generatedAt is normalized (toISOString).
+ */
+export function checkManifest(app, m, nowMs, legacyApps = []) {
   if (!isObject(m)) return { reason: 'Manifest must be an object' };
   if (m.version !== 1) return { reason: 'Unsupported manifest version' };
-  if (m.app !== app) return { reason: 'Manifest app does not match this app' };
+  if (m.app !== app && !legacyApps.includes(m.app)) return { reason: 'Manifest app does not match this app' };
   if (typeof m.generated_at !== 'string' || !ISO.test(m.generated_at)) return { reason: 'Invalid generated_at' };
   const at = Date.parse(m.generated_at);
   if (Number.isNaN(at)) return { reason: 'Invalid generated_at' };

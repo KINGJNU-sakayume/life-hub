@@ -23,10 +23,15 @@
  * cards only) with a sync document for its layout, and it reads every app's tiles (`board:read`, /board/v1/tiles).
  * It never uploads tiles of its own, so it has no `board:board` scope. Its base scope is `board:read`, so grants from
  * stages B1–B3 keep reading tiles; its inbox answers 403 insufficient_scope until it reconnects.
+ *
+ * Optional `legacy` keeps a renamed app working under its old names: `ids` (stored destination / board app names
+ * and token roles), `paths` (OAuth resources and routes served by the same handler), `redirectVars` and
+ * `localRedirectVars` (old deploy variables, read as fallbacks and still given a profile) and `keyName` (the name
+ * MCP idempotency keys hash). Old scopes are the old id with the same suffix (`potcast:board` for `music:board`).
  */
 import { toFoodCandidate } from './adapters/food.js';
 import { toKyeokyeoiCandidate } from './adapters/kyeokyeoi.js';
-import { toPotcastCandidate } from './adapters/potcast.js';
+import { toMusicCandidate } from './adapters/music.js';
 import { toAchievementCandidate } from './adapters/achievement.js';
 import { toLetterbookxdCandidate } from './adapters/letterbookxd.js';
 import { toSubCandidate } from './adapters/sub.js';
@@ -52,15 +57,23 @@ export const DESTINATIONS = Object.freeze([
     grants: 'Life Hub 수신함의 <strong>추억·방문 후보를 가져오고</strong>, 켜켜이에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
-    id: 'potcast', app: 'potcast', role: 'potcast', path: '/potcast', scope: 'potcast:inbox',
-    redirectVar: 'HUB_POTCAST_REDIRECT_URI', types: ['album_listening'], adapter: toPotcastCandidate, label: 'potcast',
-    // Optional: the same app run on the owner's computer (arcplayer, `npm run dev`), e.g. http://127.0.0.1:5173/lifehub/.
+    id: 'music', app: 'music', role: 'music', path: '/music', scope: 'music:inbox',
+    redirectVar: 'HUB_MUSIC_REDIRECT_URI', types: ['album_listening'], adapter: toMusicCandidate, label: 'music',
+    // Optional: the same app run on the owner's computer (`npm run dev`), e.g. http://127.0.0.1:5173/lifehub/.
     // It registers itself by DCR for that loopback callback (RFC 8252) and gets the same profile; the consent page
     // warns that the grant goes to this computer.
-    localRedirectVar: 'HUB_POTCAST_LOCAL_REDIRECT_URI',
+    localRedirectVar: 'HUB_MUSIC_LOCAL_REDIRECT_URI',
     // Album card (track by track); the app records `approved` albums since its stage-7 release.
     card: { approve: true },
-    grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, potcast에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
+    // Renamed from `potcast` (2026-11-19). Backward-compatible aliases, removable once the
+    // app runs under `music` everywhere, no grant holds a `potcast:*` scope and no D1 row says `potcast`.
+    legacy: {
+      ids: ['potcast'], paths: ['/potcast'],
+      redirectVars: ['HUB_POTCAST_REDIRECT_URI'], localRedirectVars: ['HUB_POTCAST_LOCAL_REDIRECT_URI'],
+      // MCP idempotency keys of album proposals keep hashing the old id, so a retry across the rename de-duplicates.
+      keyName: 'potcast',
+    },
+    grants: 'Life Hub 수신함의 <strong>앨범 감상 후보를 가져오고</strong>, music에서 승인하거나 거절한 결과를 돌려보낼 수 있어요.',
   },
   {
     id: 'achievement', app: '업적 라이브러리', role: 'achievement', path: '/achievement', scope: 'achievement:inbox',
@@ -138,14 +151,35 @@ export const boardScope = (destination) => (destination.boardClient ? null : `${
 /** The scope Life Board needs for every request to its resource (tiles); its inbox and sync check their own. */
 export const BOARD_READ_SCOPE = 'board:read';
 
-const BY_ID = new Map(DESTINATIONS.map((d) => [d.id, d]));
+const BY_ID = new Map(DESTINATIONS.flatMap((d) => [d.id, ...(d.legacy?.ids ?? [])].map((id) => [id, d])));
+/** The destination for an id, or for one of its legacy ids (`potcast` → the music entry). */
 export const destinationById = (id) => BY_ID.get(id) ?? null;
+/** The current id for a stored or legacy id; unknown ids are returned unchanged. */
+export const canonicalDestinationId = (id) => BY_ID.get(id)?.id ?? id;
+/** Every id a destination's rows and board manifests may carry: current first, then legacy. */
+export const destinationIds = (destination) => [destination.id, ...(destination.legacy?.ids ?? [])];
+/** Every resource path the destination answers on: current first, then legacy aliases. */
+export const destinationPaths = (destination) => [destination.path, ...(destination.legacy?.paths ?? [])];
+/** A scope and its legacy spellings (`music:board` → [`music:board`, `potcast:board`]); other scopes are returned alone. */
+export function scopeAliases(destination, scope) {
+  if (!scope) return [];
+  const prefix = destination.id + ':';
+  if (!scope.startsWith(prefix)) return [scope];
+  return [scope, ...(destination.legacy?.ids ?? []).map((id) => id + ':' + scope.slice(prefix.length))];
+}
+/** Only the legacy spellings of a scope. */
+export const legacyScopes = (destination, scope) => scopeAliases(destination, scope).slice(1);
 
 const HTTPS_URL = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?\/[^\s#?]*$/;
-/** A destination app's redirect URI comes from deploy config; null when unset or malformed. */
+const validHttps = (value) => typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300;
+/** Every valid redirect URI configured for an app (its variable, then legacy fallbacks), without duplicates. */
+export function redirectUrisFor(env, destination) {
+  const vars = [destination.redirectVar, ...(destination.legacy?.redirectVars ?? [])];
+  return [...new Set(vars.map((v) => env[v]).filter(validHttps))];
+}
+/** A destination app's redirect URI comes from deploy config; null when unset or malformed. Legacy variables are a fallback. */
 export function redirectUriFor(env, destination) {
-  const value = env[destination.redirectVar];
-  return typeof value === 'string' && HTTPS_URL.test(value) && value.length <= 300 ? value : null;
+  return redirectUrisFor(env, destination)[0] ?? null;
 }
 
 const LOOPBACK_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/;
@@ -153,10 +187,14 @@ const LOOPBACK_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/[A-Za-z0-9._~\/-]*$/;
 export function isLoopbackAppUrl(value) {
   return typeof value === 'string' && value.length <= 300 && LOOPBACK_URL.test(value) && !/\/\.\.?(?:\/|$)/.test(value);
 }
+/** Every valid local-copy callback configured for an app (`localRedirectVar`, then legacy fallbacks), without duplicates. */
+export function localRedirectUrisFor(env, destination) {
+  const vars = [destination.localRedirectVar, ...(destination.legacy?.localRedirectVars ?? [])].filter(Boolean);
+  return [...new Set(vars.map((v) => env[v]).filter(isLoopbackAppUrl))];
+}
 /** A destination app's local-copy callback from deploy config (`localRedirectVar`); null when unset or malformed. */
 export function localRedirectUriFor(env, destination) {
-  const value = destination.localRedirectVar ? env[destination.localRedirectVar] : undefined;
-  return isLoopbackAppUrl(value) ? value : null;
+  return localRedirectUrisFor(env, destination)[0] ?? null;
 }
 
 /** The app's public start page for card links: the redirect URI's origin + first path segment. */

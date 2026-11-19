@@ -1,5 +1,5 @@
 /**
- * potcast card body: one album listening, track by track — only the tracks that were listened to. Runs in the
+ * music card body: one album listening, track by track — only the tracks that were listened to. Runs in the
  * card iframe as window.LH_BODY. Album, artist, Spotify IDs and play times stay as proposed; only which tracks
  * count (a track can be turned off) and the note change.
  */
@@ -37,5 +37,7 @@ return {
 };})();
 `;
 
-export const POTCAST_CARD_URI = 'ui://life-hub/card-potcast.html';
-export const POTCAST_CARD_HTML = cardDocument('Life Hub · potcast', BODY, CSS);
+export const MUSIC_CARD_URI = 'ui://life-hub/card-music.html';
+/** The card's URI before the rename: tool results and conversations from then still read it (same card). */
+export const LEGACY_MUSIC_CARD_URIS = Object.freeze(['ui://life-hub/card-potcast.html']);
+export const MUSIC_CARD_HTML = cardDocument('Life Hub · music', BODY, CSS);

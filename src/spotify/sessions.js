@@ -1,5 +1,5 @@
 /**
- * From Spotify "recently played" items to potcast album-listening candidates. Pure functions.
+ * From Spotify "recently played" items to music album-listening candidates. Pure functions.
  *
  * Intentional listening only: a play counts when it was started from the album itself (its playback
  * context is that album). Playlists, radio, artist pages, search results and autoplay are ignored, so a
@@ -14,8 +14,8 @@
  * long it lasted. The time since the previous play ended approximates it: a track counts as listened
  * when that time is at least min(90% of its length, 2 minutes); otherwise it was skipped past. The first play
  * of a session has no previous play and counts as listened (Spotify only lists plays of 30 s or more).
- * Only listened tracks are proposed — potcast has no "skipped" state — and a session needs at least
- * MIN_TRACKS listened tracks. The owner reviews every track in potcast before anything is recorded.
+ * Only listened tracks are proposed — music has no "skipped" state — and a session needs at least
+ * MIN_TRACKS listened tracks. The owner reviews every track in music before anything is recorded.
  */
 export const SESSION_GAP_MS = 60 * 60 * 1000;
 export const CLOSE_AFTER_MS = 2 * 60 * 60 * 1000;
@@ -25,7 +25,7 @@ const SPOTIFY_ID = /^[A-Za-z0-9]{22}$/;
 
 const clip = (s, max) => String(s ?? '').trim().slice(0, max);
 
-/** Album-context plays from a recently-played response (only the fields potcast needs). */
+/** Album-context plays from a recently-played response (only the fields music needs). */
 export function albumPlays(items) {
   const out = [];
   for (const item of Array.isArray(items) ? items : []) {

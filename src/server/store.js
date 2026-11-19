@@ -1,15 +1,27 @@
 /** D1 persistence. All queries are parameterized and owner-scoped. SQLite triggers append changes atomically. */
 import { candidateMeaning } from '../core/candidates.js';
 import { toDestinationCandidate } from '../adapters/index.js';
+import { destinationById, canonicalDestinationId, destinationIds } from '../destinations.js';
 export class StoreFailure extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
+/**
+ * Destination names a query must match: the current id and its legacy ids (rows written before a rename, e.g.
+ * `potcast` for `music`, until migration 0012 or later rewrote them).
+ */
+const storedNames = (destination) => { const d = destinationById(destination); return d ? destinationIds(d) : [destination]; };
+const placeholders = (list) => list.map(() => '?').join(',');
+/** A legacy destination id in an envelope becomes the current one (`potcast` → `music`). */
+const withCurrentDestination = (envelope) =>
+  envelope && typeof envelope === 'object' && typeof envelope.destination === 'string'
+    ? { ...envelope, destination: canonicalDestinationId(envelope.destination) } : envelope;
+
 function record(row) {
   return {
-    id: row.id, destination: row.destination, source: row.source,
+    id: row.id, destination: canonicalDestinationId(row.destination), source: row.source,
     status: row.status, received_at: row.received_at, reviewed_at: row.reviewed_at,
     confirmed_entity_id: row.confirmed_entity_id ?? null,
-    candidate: JSON.parse(row.envelope_json),
+    candidate: withCurrentDestination(JSON.parse(row.envelope_json)),
     // Card edits/approval (0008). final_payload is the owner's version; candidate keeps the original proposal.
     revision: row.revision ?? 0,
     final_payload: row.final_payload_json ? JSON.parse(row.final_payload_json) : null,
@@ -22,22 +34,28 @@ function record(row) {
 export function finalEnvelope(rec) {
   return rec.final_payload ? { ...rec.candidate, payload: rec.final_payload } : rec.candidate;
 }
-export async function insertCandidate(db, ownerId, candidate, at) {
+export async function insertCandidate(db, ownerId, untrusted, at) {
+  const candidate = withCurrentDestination(untrusted);
   const meaning = candidateMeaning(candidate);
   // Validating the exact destination shape here prevents invalid records from entering persistent storage.
   toDestinationCandidate(candidate);
-  const id = crypto.randomUUID();
-  const result = await db.prepare(`INSERT INTO inbox
-    (id,owner_id,destination,source,idempotency_key,meaning,envelope_json,status,received_at)
-    VALUES (?,?,?,?,?,?,?,'pending',?)
-    ON CONFLICT(owner_id,destination,source,idempotency_key) DO NOTHING`)
-    .bind(id, ownerId, candidate.destination, candidate.source,
-      candidate.idempotency_key, meaning, JSON.stringify(candidate), at).run();
-  const row = await db.prepare(`SELECT * FROM inbox WHERE owner_id=? AND destination=? AND source=? AND idempotency_key=?`)
-    .bind(ownerId, candidate.destination, candidate.source, candidate.idempotency_key).first();
+  // The same proposal may already be stored under a legacy destination id; it is the same record.
+  const existing = await rowByKey(db, ownerId, candidate.destination, candidate.source, candidate.idempotency_key);
+  let changes = 0;
+  if (!existing) {
+    const id = crypto.randomUUID();
+    changes = (await db.prepare(`INSERT INTO inbox
+      (id,owner_id,destination,source,idempotency_key,meaning,envelope_json,status,received_at)
+      VALUES (?,?,?,?,?,?,?,'pending',?)
+      ON CONFLICT(owner_id,destination,source,idempotency_key) DO NOTHING`)
+      .bind(id, ownerId, candidate.destination, candidate.source,
+        candidate.idempotency_key, meaning, JSON.stringify(candidate), at).run()).meta.changes;
+  }
+  const row = existing ?? await rowByKey(db, ownerId, candidate.destination, candidate.source, candidate.idempotency_key);
   if (!row) throw new Error('Inbox read after insert failed');
-  if (row.meaning !== meaning) throw new StoreFailure(409, 'Conflicting idempotency key');
-  return { ...record(row), duplicate: result.meta.changes === 0 };
+  // A legacy row's meaning names its stored destination; compare like with like.
+  if (row.meaning !== candidateMeaning({ ...candidate, destination: row.destination })) throw new StoreFailure(409, 'Conflicting idempotency key');
+  return { ...record(row), duplicate: changes === 0 };
 }
 export async function listCandidates(db, ownerId, status, limit) {
   const query = status ?
@@ -86,8 +104,11 @@ export async function findCandidateByKey(db, ownerId, destination, source, key) 
 
 /** Look up by the destination-visible key (source + idempotency key), owner-scoped. */
 async function rowByKey(db, ownerId, destination, source, key) {
-  return db.prepare('SELECT * FROM inbox WHERE owner_id=? AND destination=? AND source=? AND idempotency_key=?')
-    .bind(ownerId, destination, source, key).first();
+  const names = storedNames(destination);
+  // The current name wins if a row exists under both (a legacy row written after the rename migration).
+  return db.prepare(`SELECT * FROM inbox WHERE owner_id=? AND destination IN (${placeholders(names)}) AND source=? AND idempotency_key=?
+    ORDER BY destination=? DESC LIMIT 1`)
+    .bind(ownerId, ...names, source, key, names[0]).first();
 }
 
 /**
@@ -119,8 +140,9 @@ export async function rejectCandidateByKey(db, ownerId, destination, source, key
 export async function listDestinationCandidates(db, ownerId, destination, status, limit) {
   const statuses = status === null ? [] : Array.isArray(status) ? status : [status];
   const filter = statuses.length ? ` AND status IN (${statuses.map(() => '?').join(',')})` : '';
-  return (await db.prepare(`SELECT * FROM inbox WHERE owner_id=? AND destination=?${filter} ORDER BY received_at DESC,id DESC LIMIT ?`)
-    .bind(ownerId, destination, ...statuses, limit).all()).results.map(record);
+  const names = storedNames(destination);
+  return (await db.prepare(`SELECT * FROM inbox WHERE owner_id=? AND destination IN (${placeholders(names)})${filter} ORDER BY received_at DESC,id DESC LIMIT ?`)
+    .bind(ownerId, ...names, ...statuses, limit).all()).results.map(record);
 }
 
 /* ---------- Claude card approval (0008) ---------- */

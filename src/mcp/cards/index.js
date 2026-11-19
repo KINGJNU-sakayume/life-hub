@@ -9,10 +9,11 @@ import { DIARYROULETTE_CARD_URI, DIARYROULETTE_CARD_HTML } from './diaryroulette
 import { ACHIEVEMENT_CARD_URI, ACHIEVEMENT_CARD_HTML } from './achievement.js';
 import { SUB_CARD_URI, SUB_CARD_HTML } from './sub.js';
 import { ANIMAN_CARD_URI, ANIMAN_CARD_HTML } from './animan.js';
-import { POTCAST_CARD_URI, POTCAST_CARD_HTML } from './potcast.js';
+import { MUSIC_CARD_URI, MUSIC_CARD_HTML, LEGACY_MUSIC_CARD_URIS } from './music.js';
 import { LETTERBOOKXD_CARD_URI, LETTERBOOKXD_CARD_HTML } from './letterbookxd.js';
 import { BOARD_CARD_URI, BOARD_CARD_HTML } from './board.js';
 import { CARD_MIME, CARD_RESOURCE_META } from './shell.js';
+import { canonicalDestinationId } from '../../destinations.js';
 
 const CARDS = Object.freeze({
   food: { uri: FOOD_CARD_URI, html: FOOD_CARD_HTML, name: 'life-hub-card-food', title: 'PALATE 기록 카드', labels: { meal: '식사 기록', wish: '먹어보기' } },
@@ -21,14 +22,15 @@ const CARDS = Object.freeze({
   achievement: { uri: ACHIEVEMENT_CARD_URI, html: ACHIEVEMENT_CARD_HTML, name: 'life-hub-card-achievement', title: '업적 라이브러리 카드', labels: { activity_record: '활동 기록', achievement_definition: '새 업적' } },
   sub: { uri: SUB_CARD_URI, html: SUB_CARD_HTML, name: 'life-hub-card-sub', title: '역 도장깨기 카드', labels: { station_visit: '역 방문', station_draw: '역 뽑기' } },
   animan: { uri: ANIMAN_CARD_URI, html: ANIMAN_CARD_HTML, name: 'life-hub-card-animan', title: 'AniMan 진행 카드', labels: { media_progress: '진행 기록' } },
-  potcast: { uri: POTCAST_CARD_URI, html: POTCAST_CARD_HTML, name: 'life-hub-card-potcast', title: 'potcast 앨범 카드', labels: { album_listening: '앨범 감상' } },
+  music: { uri: MUSIC_CARD_URI, legacyUris: LEGACY_MUSIC_CARD_URIS, html: MUSIC_CARD_HTML, name: 'life-hub-card-music', title: 'music 앨범 카드', labels: { album_listening: '앨범 감상' } },
   letterbookxd: { uri: LETTERBOOKXD_CARD_URI, html: LETTERBOOKXD_CARD_HTML, name: 'life-hub-card-letterbookxd', title: '책장 독서 카드', labels: { reading_record: '독서 기록' } },
   board: { uri: BOARD_CARD_URI, html: BOARD_CARD_HTML, name: 'life-hub-card-board', title: 'Life Board 메모 카드', labels: { memo: '보드 메모' } },
 });
 
-export const cardFor = (destination) => CARDS[destination] ?? null;
+export const cardFor = (destination) => CARDS[canonicalDestinationId(destination)] ?? null;
 export const CARD_RESOURCES = Object.freeze(Object.values(CARDS).map((c) => ({ uri: c.uri, name: c.name, title: c.title, mimeType: CARD_MIME })));
 export function readCardResource(uri) {
-  const card = Object.values(CARDS).find((c) => c.uri === uri);
+  // A renamed card still answers on its old URI (not listed, only readable).
+  const card = Object.values(CARDS).find((c) => c.uri === uri || c.legacyUris?.includes(uri));
   return card ? { uri, mimeType: CARD_MIME, text: card.html, _meta: CARD_RESOURCE_META } : null;
 }

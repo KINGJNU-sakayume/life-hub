@@ -6,7 +6,7 @@
  * - The Worker's cron trigger calls pollSpotify every hour: one token refresh and one recently-played
  *   request (the last 50 plays after the stored cursor). No Claude involvement, no tokens spent.
  * - Album-context plays are stored briefly, grouped into sessions (sessions.js), and closed sessions
- *   become pending potcast candidates (source `spotify`). The owner approves each album in potcast.
+ *   become pending music candidates (source `spotify`). The owner approves each album in music.
  */
 import { insertCandidate } from '../server/store.js';
 import { openToken, sealToken, tokenKeyConfigured } from './crypto.js';
@@ -113,7 +113,7 @@ export async function pollSpotify(env, fetchFn = fetch, now = Date.now()) {
     for (const c of candidates) {
       // A rebuilt session (e.g. after an interrupted round) has the same key and content: a duplicate, not an error.
       await insertCandidate(env.DB, owner, {
-        hub_version: 1, destination: 'potcast', source: 'spotify', source_ref: 'spotify-sync:' + c.payload.listened_on,
+        hub_version: 1, destination: 'music', source: 'spotify', source_ref: 'spotify-sync:' + c.payload.listened_on,
         idempotency_key: c.idempotency_key, created_at: at, candidate_type: 'album_listening', payload: c.payload,
       }, at);
     }

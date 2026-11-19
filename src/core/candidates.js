@@ -8,7 +8,8 @@
  */
 
 const SOURCES = new Set(['chatgpt', 'claude', 'codex', 'manual', 'spotify', 'board']);
-const DESTINATIONS = new Set(['food', 'kyeokyeoi', 'potcast', 'achievement', 'letterbookxd', 'sub', 'animan', 'diaryroulette', 'board']);
+// `potcast` is the legacy id of `music` (renamed 2026-11-19); envelopes that still say so stay valid.
+const DESTINATIONS = new Set(['food', 'kyeokyeoi', 'music', 'potcast', 'achievement', 'letterbookxd', 'sub', 'animan', 'diaryroulette', 'board']);
 const KEY = /^[A-Za-z0-9_.:-]{8,128}$/;
 const SOURCE_REF = /^[A-Za-z0-9_.:-]{1,200}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;

@@ -17,7 +17,7 @@ Life Hub is a private-first routing project for personal websites. ChatGPT/Claud
 - **P7 (board API, deployed):** stages B1, B3, B4 and B5 are deployed on the Hub (B2 is the board site's own connection, in the board repository). B1: each app may upload its board tile manifest (`<app>/v1/board`, scope `<app>:board`, granted with the app's other scopes, latest one per app, 64 KiB, image addresses only); Life Board reads them with `board:read` at `/board/v1/tiles`, plus the Hub's own count of proposals waiting. B3: Life Board's layout sync (`/board/v1/sync`, scope `board:sync`). B4: Claude memos for the board (`propose_board_memo`, approved only in Claude cards, read by the board with `board:inbox`). B5: the board's roulette proposes a 역 도장깨기 station draw (`POST /board/v1/proposals`, scope `board:propose`, inbox source `board`, migration `0011`), deployed 2026-11-05. Apps uploading tiles so far: see [Connected apps](#connected-apps). Needs migrations `0010`–`0011` and `HUB_BOARD_REDIRECT_URI` ([docs/P7_BOARD.md](docs/P7_BOARD.md)).
 - **P5 (proposed):** ChatGPT personal MCP plugin OAuth and editable reading-preview card; owner-confirmed proposal to letterbookxd ([docs/P5_CHATGPT_PLUGIN.md](docs/P5_CHATGPT_PLUGIN.md)). Other destination cards remain future work.
 - **P4 Codex (server implementation, destination changes pending):** Codex CLI/IDE as a separately authenticated MCP producer (OAuth + PKCE, `source: codex`) using the existing proposal tools ([docs/P4_CODEX_CONNECTOR.md](docs/P4_CODEX_CONNECTOR.md)).
-- **P3:** 켜켜이 memories and region visits ([docs/P3_KYEOKYEOI.md](docs/P3_KYEOKYEOI.md)); potcast album listening from conversation or the Spotify history file ([docs/P3_POTCAST.md](docs/P3_POTCAST.md)); 업적 라이브러리 activity records ([docs/P3_ACHIEVEMENT.md](docs/P3_ACHIEVEMENT.md)); 책장 reading records ([docs/P3_LETTERBOOKXD.md](docs/P3_LETTERBOOKXD.md)); 역 도장깨기 station stamps ([docs/P3_SUB.md](docs/P3_SUB.md)); AniMan anime/manga progress ([docs/P3_ANIMAN.md](docs/P3_ANIMAN.md)); hourly Spotify listening sync for potcast ([docs/P3_SPOTIFY_SYNC.md](docs/P3_SPOTIFY_SYNC.md)). Destination apps are declared in one registry, `src/destinations.js`.
+- **P3:** 켜켜이 memories and region visits ([docs/P3_KYEOKYEOI.md](docs/P3_KYEOKYEOI.md)); music album listening from conversation or the Spotify history file ([docs/P3_MUSIC.md](docs/P3_MUSIC.md)); 업적 라이브러리 activity records ([docs/P3_ACHIEVEMENT.md](docs/P3_ACHIEVEMENT.md)); 책장 reading records ([docs/P3_LETTERBOOKXD.md](docs/P3_LETTERBOOKXD.md)); 역 도장깨기 station stamps ([docs/P3_SUB.md](docs/P3_SUB.md)); AniMan anime/manga progress ([docs/P3_ANIMAN.md](docs/P3_ANIMAN.md)); hourly Spotify listening sync for music ([docs/P3_SPOTIFY_SYNC.md](docs/P3_SPOTIFY_SYNC.md)). Destination apps are declared in one registry, `src/destinations.js`.
 
 No proposal becomes a record without the owner's approval in its destination app.
 
@@ -29,7 +29,7 @@ Destination apps are separate repositories, declared in `src/destinations.js`. S
 |---|---|---|---|---|
 | PALATE (food) | [food](https://github.com/KINGJNU-sakayume/food) | ✓ | – | ✓ (2026-11-08) |
 | 켜켜이 | [kyeokyeoi](https://github.com/KINGJNU-sakayume/kyeokyeoi) | ✓ | – | ✓ (2026-11-08) |
-| potcast | [arcplayer](https://github.com/KINGJNU-sakayume/arcplayer) (private; formerly potcast) | ✓ (+ hourly Spotify sync, P3) | – | ✓ (2026-11-07) |
+| music | [music](https://github.com/KINGJNU-sakayume/music) (private; formerly arcplayer, originally potcast) | ✓ (+ hourly Spotify sync, P3) | – | ✓ (2026-11-07) |
 | 업적 라이브러리 | [achievement](https://github.com/KINGJNU-sakayume/achievement) | ✓ | – | ✓ (2026-11-08) |
 | 책장 | [letterbookxd](https://github.com/KINGJNU-sakayume/letterbookxd) | ✓ | ✓ | ✓ (2026-11-07) |
 | 역 도장깨기 | [sub](https://github.com/KINGJNU-sakayume/sub) | ✓ (+ station draws proposed by the board's roulette) | – | ✓ (2026-11-06) |
@@ -38,7 +38,9 @@ Destination apps are separate repositories, declared in `src/destinations.js`. S
 | ELO Sorter | [elosorter](https://github.com/KINGJNU-sakayume/elosorter) | – (sync only) | ✓ | ✓ (2026-11-07) |
 | Life Board | [board](https://github.com/KINGJNU-sakayume/board) | memos only (approved in Claude cards) | ✓ (board layout) | reads every app's tiles |
 
-**Where each app runs.** All apps except potcast run from their GitHub Pages address, and Life Hub only accepts that exact address (`HUB_<APP>_REDIRECT_URI`). potcast (the `arcplayer` repository) runs on the owner's computer, because its original lyrics and 21:9 artwork stay local; it connects through its loopback callback (`HUB_POTCAST_LOCAL_REDIRECT_URI`, `http://127.0.0.1:5173/lifehub/`) and `HUB_POTCAST_REDIRECT_URI` can stay empty. Life Board also implements a local connection (`HUB_BOARD_LOCAL_REDIRECT_URI`, `http://127.0.0.1:8080/lifehub/`). The other `HUB_*_LOCAL_REDIRECT_URI` variables are accepted by the Hub, but those apps only start a connection from their Pages address, so leaving them empty is correct.
+**Where each app runs.** Every app connects from its GitHub Pages address, and Life Hub only accepts that exact address (`HUB_<APP>_REDIRECT_URI`). music connects from `https://<user>.github.io/music/lifehub/` (client document `…/music/lifehub-client.json`, `HUB_MUSIC_REDIRECT_URI`) and also from the owner's computer through its loopback callback (`HUB_MUSIC_LOCAL_REDIRECT_URI`, `http://127.0.0.1:5173/lifehub/`). Life Board also implements a local connection (`HUB_BOARD_LOCAL_REDIRECT_URI`, `http://127.0.0.1:8080/lifehub/`). The other `HUB_*_LOCAL_REDIRECT_URI` variables are accepted by the Hub, but those apps only start a connection from their Pages address, so leaving them empty is correct.
+
+**music was renamed from potcast (2026-11-19).** The Hub serves `/music/v1/...` with the scopes `music:inbox` and `music:board`, and new grants get those. Until the rename is finished everywhere it also keeps the old names as aliases: `/potcast/v1/...` is served by the same handler, grants holding `potcast:*` scopes (or the `potcast` role) are accepted on both paths, the old callback in `HUB_POTCAST_REDIRECT_URI` / `HUB_POTCAST_LOCAL_REDIRECT_URI` still connects (and is read when the `HUB_MUSIC_*` variable is empty), the card's old URI `ui://life-hub/card-potcast.html` still reads, and rows stored as `potcast` are read as `music` (migration `0012_music_rename.sql` rewrites them). The aliases live in the `legacy` block of the music entry in `src/destinations.js` and can be removed later.
 
 Each app keeps its own README for its side of the connection; per-app instructions for adding board tiles are in the board repository's `docs/prompts/`.
 
@@ -55,7 +57,7 @@ Node.js's experimental SQLite API runs the SQL migrations in an in-memory databa
 ## Implementation
 
 - `src/core/candidates.js`: Hub v1 schema and idempotency semantics, in memory.
-- `src/adapters/food.js`: exact translation to PALATE local inbox format, no direct approval. The other `src/adapters/*.js` files (kyeokyeoi, potcast, achievement, letterbookxd, sub, animan, diaryroulette, board) do the same for each destination; `index.js` registers them.
+- `src/adapters/food.js`: exact translation to PALATE local inbox format, no direct approval. The other `src/adapters/*.js` files (kyeokyeoi, music, achievement, letterbookxd, sub, animan, diaryroulette, board) do the same for each destination; `index.js` registers them.
 - `src/server/index.js`: Worker entry; wires OAuth, `/authorize`, `/mcp` and the P1 routes.
 - `src/server/worker.js`: P1 HTTP routes (`/health`, `/v1/*`).
 - `src/auth/owner-login.js`: owner password check, throttle, redirect allowlist, consent page.
@@ -66,7 +68,7 @@ Node.js's experimental SQLite API runs the SQL migrations in an in-memory databa
 - `src/mcp/cards/`: Claude conversation cards, one per destination (P4).
 - `src/sync/`: per-app JSON device sync, `<app>/v1/sync` (P6).
 - `src/board/`: board tile manifests, Life Board read API and roulette proposals (P7).
-- `src/spotify/`: hourly Spotify listening sync for potcast (P3).
+- `src/spotify/`: hourly Spotify listening sync for music (P3).
 - `src/server/auth.js`: secret-token roles; identity is never accepted from client JSON.
 - `src/server/store.js` + `migrations/`: D1 candidate storage with SQL uniqueness, append-only change feed, and the login throttle.
 - `test/`: Node's built-in test runner; each destination, the OAuth flow, cards, sync and board have their own file.
@@ -81,7 +83,7 @@ Claude/Codex --[MCP + OAuth]--> Life Hub D1 private inbox
                                                          |
                                    [PALATE pull + receipts, P2b]
                                                          v
-                                           food, kyeokyeoi, potcast, ... (see Connected apps)
+                                           food, kyeokyeoi, music, ... (see Connected apps)
                                                          |
                                           [owner-approved destination receipt]
 ```

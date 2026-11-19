@@ -101,7 +101,7 @@ const albumSchema = {
   properties: {
     artist: { type: 'string', minLength: 1, maxLength: 200, description: 'Album artist as Spotify names them.' },
     album: { type: 'string', minLength: 1, maxLength: 200 },
-    spotify_album_id: { type: 'string', pattern: '^[A-Za-z0-9]{22}$', description: 'Only if you actually know it; potcast can find the album itself.' },
+    spotify_album_id: { type: 'string', pattern: '^[A-Za-z0-9]{22}$', description: 'Only if you actually know it; music can find the album itself.' },
     origin: { type: 'string', enum: ['conversation', 'spotify_history'], description: 'conversation: the user told you. spotify_history: from their Spotify streaming-history file, after they confirmed this album.' },
     listened_on: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Day of listening (YYYY-MM-DD). ' + DATE_RULE },
     whole_album: { type: 'boolean', description: 'true when the user said they listened to the whole album (conversation only). Do not send tracks then.' },
@@ -230,15 +230,15 @@ export const TOOLS = Object.freeze([
   },
   {
     name: 'propose_album_listening',
-    title: 'Propose an album listening for potcast',
-    description: 'Propose ONE album the user listened to on purpose (digging an artist, or sitting down to listen to an album), for review in potcast. ' +
+    title: 'Propose an album listening for music',
+    description: 'Propose ONE album the user listened to on purpose (digging an artist, or sitting down to listen to an album), for review in music. ' +
       'Music that merely played in the background, on a playlist, radio or autoplay does not count. ' +
       'origin=conversation: the user told you ("오늘 Blond 다 들었어") — use whole_album, or list only the tracks they listened to. ' +
       'origin=spotify_history: the user gave you their Spotify Extended Streaming History (JSON). Analyse it with code, never by reading rows: use only ts, ms_played, spotify_track_uri, master_metadata_track_name, master_metadata_album_album_name, master_metadata_album_artist_name, reason_start, reason_end, shuffle, skipped, and ignore everything else (IP addresses, user agents, usernames). ' +
       'Treat as intentional only album sessions: several different tracks of the same album played close together with shuffle off. ' +
-      'A track is listened when reason_end is "trackdone", or it was not skipped and ms_played ≥ 120000; leave every other track out (potcast has no "skipped" state). Keep one entry per track (latest play). ' +
+      'A track is listened when reason_end is "trackdone", or it was not skipped and ms_played ≥ 120000; leave every other track out (music has no "skipped" state). Keep one entry per track (latest play). ' +
       'Before proposing from history, list the candidate albums to the user in small batches (artist, album, date range, listened/total) and propose ONLY the albums they confirm. ' +
-      pendingNote('potcast') + ' Identical proposals are de-duplicated.',
+      pendingNote('music') + ' Identical proposals are de-duplicated.',
     inputSchema: albumSchema,
     annotations: WRITE,
   },
@@ -258,8 +258,8 @@ export const TOOLS = Object.freeze([
   },
   {
     name: 'review_listening',
-    title: 'Review listened albums for potcast',
-    description: 'Show ONE album listening waiting for review in potcast (albums Life Hub collected from Spotify every hour, or ones proposed earlier), when the user asks to check or review the albums they listened to. The owner checks which tracks they listened to and approves in the card or in potcast. Call again to show the next album. Never approve, reject or change tracks on the owner\'s behalf.',
+    title: 'Review listened albums for music',
+    description: 'Show ONE album listening waiting for review in music (albums Life Hub collected from Spotify every hour, or ones proposed earlier), when the user asks to check or review the albums they listened to. The owner checks which tracks they listened to and approves in the card or in music. Call again to show the next album. Never approve, reject or change tracks on the owner\'s behalf.',
     inputSchema: reviewSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -348,7 +348,7 @@ export const CARD_TOOLS = Object.freeze([
 ]);
 const CARD_TOOL_NAMES = new Set(CARD_TOOLS.map((t) => t.name));
 const PROPOSE_DESTINATION = Object.freeze({
-  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'potcast', review_listening: 'potcast', propose_activity_record: 'achievement', propose_achievement: 'achievement',
+  propose_food_meal: 'food', propose_food_wish: 'food', propose_album_listening: 'music', review_listening: 'music', propose_activity_record: 'achievement', propose_achievement: 'achievement',
   propose_reading_record: 'letterbookxd', propose_station_visit: 'sub', propose_station_draw: 'sub', propose_media_progress: 'animan',
   propose_memory: 'kyeokyeoi', propose_region_visit: 'kyeokyeoi', propose_daily_mission: 'diaryroulette', propose_board_memo: 'board',
 });
@@ -456,8 +456,8 @@ export function needsAppReview(destination, type, payload, refs) {
     const hits = (refs?.categories ?? []).filter((c) => c.label === payload.category).length;
     return type === 'achievement_definition' && payload.category === undefined ? false : hits !== 1;
   }
-  // potcast finds the album on Spotify by its ID or a track ID; without either it must ask.
-  if (destination === 'potcast') return !payload.spotify_album_id && !(payload.tracks ?? []).some((t) => t.spotify_track_id);
+  // music finds the album on Spotify by its ID or a track ID; without either it must ask.
+  if (destination === 'music') return !payload.spotify_album_id && !(payload.tracks ?? []).some((t) => t.spotify_track_id);
   if (destination === 'animan') return seriesMatches(payload.title, refs?.series).length !== 1;
   if (destination === 'letterbookxd') return !bookMatch(payload, refs);
   if (destination === 'sub' && type === 'station_visit') return stationMatches(payload.station, refs?.stations).length !== 1;
@@ -527,8 +527,8 @@ export class ToolInputError extends Error {}
 
 /** Strict argument parsing against a tool schema: unknown fields, wrong types and blanks are input errors. */
 /**
- * potcast records only what was listened to. A "skipped" track from an older prompt or client is left out of
- * the proposal (stored proposals that still carry one stay readable; potcast drops it too).
+ * music records only what was listened to. A "skipped" track from an older prompt or client is left out of
+ * the proposal (stored proposals that still carry one stay readable; music drops it too).
  */
 function listenedOnly(payload) {
   if (!Array.isArray(payload.tracks)) return payload;
@@ -579,7 +579,9 @@ async function idempotencyKey(destination, candidateType, payload, source) {
   // Food keeps its original formula so earlier proposals still de-duplicate. A daily mission is one per diary
   // day whatever was drawn, so asking again the same day returns the same mission (the app's own rule).
   if (destination === 'diaryroulette') payload = { date: payload.date };
-  const parts = destination === 'food' ? [source, candidateType, canonical(payload)] : [source, destination, candidateType, canonical(payload)];
+  // A renamed destination keeps hashing its old name (`legacy.keyName`), so the same proposal keeps its key.
+  const keyName = destinationById(destination)?.legacy?.keyName ?? destination;
+  const parts = destination === 'food' ? [source, candidateType, canonical(payload)] : [source, keyName, candidateType, canonical(payload)];
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)));
   return 'mcp-' + [...new Uint8Array(digest)].slice(0, 20).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -630,15 +632,15 @@ async function withCard(context, rec, text, structured, extra) {
 }
 
 /**
- * potcast: show one pending album (Spotify-collected first, oldest first) as a card, so albums the hourly
+ * music: show one pending album (Spotify-collected first, oldest first) as a card, so albums the hourly
  * collection found can be reviewed in a conversation. Reads only; the card's ticket is the one write.
  */
 async function reviewListening(context, args) {
   const { candidate_id: wanted } = pick(args ?? {}, reviewSchema);
   if (wanted !== undefined && !/^[0-9a-f-]{36}$/.test(wanted)) throw new ToolInputError('candidate_id must be one returned by review_listening.');
-  const pending = (await listDestinationCandidates(context.db, context.ownerId, 'potcast', 'pending', 100))
+  const pending = (await listDestinationCandidates(context.db, context.ownerId, 'music', 'pending', 100))
     .sort((a, b) => Number(b.source === 'spotify') - Number(a.source === 'spotify') || (a.received_at < b.received_at ? -1 : a.received_at > b.received_at ? 1 : 0));
-  if (!pending.length) return { text: 'No album listening is waiting for review in potcast.', structured: { status: 'empty', remaining: 0 } };
+  if (!pending.length) return { text: 'No album listening is waiting for review in music.', structured: { status: 'empty', remaining: 0 } };
   const rec = wanted ? pending.find((r) => r.id === wanted) : pending[0];
   if (!rec) throw new ToolInputError('That album is not waiting for review (it may be decided already).');
   const p = finalEnvelope(rec).payload;
@@ -762,7 +764,7 @@ export async function callTool(name, args, context) {
     } else if (name === 'propose_food_wish') {
       outcome = await propose(context, 'food', 'wish', pick(args, wishSchema));
     } else if (name === 'propose_album_listening') {
-      outcome = await propose(context, 'potcast', 'album_listening', listenedOnly(pick(args, albumSchema)));
+      outcome = await propose(context, 'music', 'album_listening', listenedOnly(pick(args, albumSchema)));
     } else if (name === 'propose_activity_record') {
       outcome = await propose(context, 'achievement', 'activity_record', pick(args, activitySchema));
     } else if (name === 'review_listening') {
